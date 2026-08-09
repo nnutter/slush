@@ -8,16 +8,17 @@ import (
 	"os/exec"
 )
 
-// runSSH runs ssh with stdio attached. Windows lacks the Unix TTY process-group
-// handoff used for near-transparent interactive sessions.
-func runSSH(sshPath string, args []string) (int, error) {
-	cmd := exec.Command(sshPath, args...)
+// runSession runs the remote client (ssh or et) with stdio attached. Windows
+// lacks the Unix TTY process-group handoff used for near-transparent
+// interactive sessions.
+func runSession(binPath string, args []string) (int, error) {
+	cmd := exec.Command(binPath, args...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
 	if err := cmd.Start(); err != nil {
-		return 0, fmt.Errorf("start ssh: %w", err)
+		return 0, fmt.Errorf("start %s: %w", binPath, err)
 	}
 	return exitCode(cmd.Wait()), nil
 }

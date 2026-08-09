@@ -13,11 +13,11 @@ import (
 	"golang.org/x/term"
 )
 
-// runSSH runs ssh with the given args, attaching the current terminal as
-// completely as possible while remaining the parent so callers can clean up
-// after Wait returns.
-func runSSH(sshPath string, args []string) (int, error) {
-	cmd := exec.Command(sshPath, args...)
+// runSession runs the remote client (ssh or et) with the given args, attaching
+// the current terminal as completely as possible while remaining the parent so
+// callers can clean up after Wait returns.
+func runSession(binPath string, args []string) (int, error) {
+	cmd := exec.Command(binPath, args...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -39,7 +39,7 @@ func runSSH(sshPath string, args []string) (int, error) {
 	}
 
 	if err := cmd.Start(); err != nil {
-		return 0, fmt.Errorf("start ssh: %w", err)
+		return 0, fmt.Errorf("start %s: %w", binPath, err)
 	}
 
 	if tty {
@@ -67,7 +67,7 @@ func setTerminalForegroundPgid(fd int, pgid int) error {
 	return unix.IoctlSetPointerInt(fd, unix.TIOCSPGRP, pgid)
 }
 
-// forwardSignals sends terminal- and lifecycle-related signals to the ssh
+// forwardSignals sends terminal- and lifecycle-related signals to the child
 // process. Returns a stop function.
 func forwardSignals(proc *os.Process) (stop func()) {
 	ch := make(chan os.Signal, 1)

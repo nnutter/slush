@@ -2,21 +2,31 @@ package main
 
 import (
 	"net"
+	"strconv"
 	"testing"
 )
 
-// useEphemeralLemonadeAddr points lemonadeAddr at a free local port for the
+// useEphemeralLemonadePort points lemonadePort at a free local port for the
 // duration of the test so concurrent/local lemonade instances do not conflict.
-func useEphemeralLemonadeAddr(t *testing.T) {
+func useEphemeralLemonadePort(t *testing.T) {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("listen: %v", err)
 	}
-	addr := ln.Addr().String()
+	_, portStr, err := net.SplitHostPort(ln.Addr().String())
+	if err != nil {
+		_ = ln.Close()
+		t.Fatalf("split host port: %v", err)
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		_ = ln.Close()
+		t.Fatalf("parse port: %v", err)
+	}
 	_ = ln.Close()
 
-	previous := lemonadeAddr
-	lemonadeAddr = addr
-	t.Cleanup(func() { lemonadeAddr = previous })
+	previous := lemonadePort
+	lemonadePort = port
+	t.Cleanup(func() { lemonadePort = previous })
 }

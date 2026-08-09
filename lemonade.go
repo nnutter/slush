@@ -6,44 +6,47 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"strconv"
 	"time"
 )
 
 const (
-	defaultLemonadeAddr = "127.0.0.1:2489"
+	defaultLemonadePort = 2489
 	lemonadeStartWait   = 5 * time.Second
-	lemonadeDialTimeout = 100 * time.Millisecond
 )
 
-// lemonadeAddr is the local Lemonade listen address. Tests may override it.
-var lemonadeAddr = defaultLemonadeAddr
+// lemonadePort is the local Lemonade TCP port. Tests may override it.
+// Production lemonade always listens on ":"+port (all interfaces).
+var lemonadePort = defaultLemonadePort
 
 // lemonadeServer is a Lemonade server process started by slush.
 type lemonadeServer struct {
 	cmd *exec.Cmd
 }
 
-// ensureLemonadePortFree returns an error if something is already
-// accepting connections on the Lemonade address.
+// ensureLemonadePortFree returns an error if the Lemonade port cannot be bound.
+//
+// Must not dial the port: lemonade's server puts every accepted connection on a
+// one-slot channel and only receives from it inside RPC handlers. A plain TCP
+// connect/close leaves a stale entry there and deadlocks the next real request.
 func ensureLemonadePortFree() error {
-	if !isAcceptingConnections(lemonadeAddr) {
-		return nil
+	if portIsBound(lemonadePort) {
+		return fmt.Errorf("lemonade already running on :%d; stop it before using slush", lemonadePort)
 	}
-	return fmt.Errorf("lemonade already running on %s; stop it before using slush", lemonadeAddr)
+	return nil
 }
 
-// startLemonade starts `lemonade server -allow 127.0.0.1` and waits until
-// it accepts connections on lemonadeAddr.
+// startLemonade starts `lemonade server -allow 127.0.0.1` and waits until the
+// Lemonade port is bound (without dialing it).
 func startLemonade() (*lemonadeServer, error) {
 	bin, err := exec.LookPath("lemonade")
 	if err != nil {
 		return nil, fmt.Errorf("lemonade not found on PATH: %w", err)
 	}
 
-	cmd := exec.Command(bin, "server", "-allow", "127.0.0.1")
-	// Production lemonade always binds 2489; tests use a fake binary that
-	// honors SLUSH_LEMONADE_ADDR when set.
-	cmd.Env = append(os.Environ(), "SLUSH_LEMONADE_ADDR="+lemonadeAddr)
+	cmd := exec.Command(bin, "server", "-allow", "127.0.0.1", "--port="+strconv.Itoa(lemonadePort))
+	// Tests use a fake binary that honors SLUSH_LEMONADE_PORT when set.
+	cmd.Env = append(os.Environ(), "SLUSH_LEMONADE_PORT="+strconv.Itoa(lemonadePort))
 	cmd.Stdout = io.Discard
 	cmd.Stderr = io.Discard
 	if err := cmd.Start(); err != nil {
@@ -51,7 +54,7 @@ func startLemonade() (*lemonadeServer, error) {
 	}
 
 	server := &lemonadeServer{cmd: cmd}
-	if err := waitForAcceptingConnections(lemonadeAddr, lemonadeStartWait); err != nil {
+	if err := waitForPortBound(lemonadePort, lemonadeStartWait); err != nil {
 		server.Stop()
 		return nil, fmt.Errorf("lemonade did not become ready: %w", err)
 	}
@@ -67,22 +70,25 @@ func (s *lemonadeServer) Stop() {
 	_ = s.cmd.Wait()
 }
 
-func isAcceptingConnections(addr string) bool {
-	conn, err := net.DialTimeout("tcp", addr, lemonadeDialTimeout)
+// portIsBound reports whether something is listening on ":"+port by trying to
+// bind that address. Binding never completes a TCP handshake, so it is safe
+// against lemonade's connection-channel quirk.
+func portIsBound(port int) bool {
+	ln, err := net.Listen("tcp", ":"+strconv.Itoa(port))
 	if err != nil {
-		return false
+		return true
 	}
-	_ = conn.Close()
-	return true
+	_ = ln.Close()
+	return false
 }
 
-func waitForAcceptingConnections(addr string, timeout time.Duration) error {
+func waitForPortBound(port int, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		if isAcceptingConnections(addr) {
+		if portIsBound(port) {
 			return nil
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	return fmt.Errorf("timed out waiting for %s", addr)
+	return fmt.Errorf("timed out waiting for :%d", port)
 }

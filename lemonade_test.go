@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"testing"
 	"time"
 
@@ -13,14 +14,15 @@ import (
 )
 
 func TestEnsureLemonadePortFreeWhenNothingListening(t *testing.T) {
-	useEphemeralLemonadeAddr(t)
+	useEphemeralLemonadePort(t)
 	require.NoError(t, ensureLemonadePortFree())
 }
 
 func TestEnsureLemonadePortFreeWhenSomethingListening(t *testing.T) {
-	useEphemeralLemonadeAddr(t)
+	useEphemeralLemonadePort(t)
 
-	ln, err := net.Listen("tcp", lemonadeAddr)
+	// Bind like production lemonade ("_"+port) so the free-port check sees it.
+	ln, err := net.Listen("tcp", ":"+strconv.Itoa(lemonadePort))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = ln.Close() })
 
@@ -30,7 +32,7 @@ func TestEnsureLemonadePortFreeWhenSomethingListening(t *testing.T) {
 }
 
 func TestStartAndStopLemonade(t *testing.T) {
-	useEphemeralLemonadeAddr(t)
+	useEphemeralLemonadePort(t)
 
 	binDir := t.TempDir()
 	writeFakeLemonade(t, binDir)
@@ -40,14 +42,14 @@ func TestStartAndStopLemonade(t *testing.T) {
 
 	server, err := startLemonade()
 	require.NoError(t, err)
-	require.True(t, isAcceptingConnections(lemonadeAddr))
+	require.True(t, portIsBound(lemonadePort))
 
 	server.Stop()
-	requirePortFree(t, lemonadeAddr)
+	requirePortFree(t, lemonadePort)
 }
 
 func TestStartLemonadeMissingBinary(t *testing.T) {
-	useEphemeralLemonadeAddr(t)
+	useEphemeralLemonadePort(t)
 	t.Setenv("PATH", emptyPath(t))
 
 	_, err := startLemonade()
@@ -64,14 +66,14 @@ func emptyPath(t *testing.T) string {
 	return dir + string(os.PathListSeparator) + filepath.Join(dir, "nope")
 }
 
-func requirePortFree(t *testing.T, addr string) {
+func requirePortFree(t *testing.T, port int) {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		if !isAcceptingConnections(addr) {
+		if !portIsBound(port) {
 			return
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	t.Fatalf("%s still accepting connections", addr)
+	t.Fatalf(":%d still bound", port)
 }

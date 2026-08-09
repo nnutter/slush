@@ -45,6 +45,25 @@ func TestRunEndToEndWithFakeBinaries(t *testing.T) {
 	requirePortFree(t, lemonadePort)
 }
 
+func TestRunEndToEndWithET(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake binary helpers are shell scripts")
+	}
+
+	useEphemeralLemonadePort(t)
+
+	binDir := t.TempDir()
+	writeFakeClient(t, binDir, "et", "-r", etReverseTunnel)
+	writeFakeLemonade(t, binDir)
+	t.Setenv("PATH", binDir)
+
+	require.NoError(t, ensureLemonadePortFree())
+
+	code := run([]string{"--et", "user@host", "true"})
+	assert.Equal(t, 0, code)
+	requirePortFree(t, lemonadePort)
+}
+
 func TestRunPropagatesSSHExitCode(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("fake binary helpers are shell scripts")
@@ -64,10 +83,24 @@ func TestRunPropagatesSSHExitCode(t *testing.T) {
 	requirePortFree(t, lemonadePort)
 }
 
-// TestStartLemonadeDoesNotPoisonConnCh ensures readiness probing never dials
-// the lemonade port. Real lemonade accepts every TCP connection onto a one-slot
-// channel and only receives from it inside RPC handlers; a connect/close leaves
-// a stale entry and deadlocks the next RPC (and can panic the server).
+func TestRunETNotFound(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake binary helpers are shell scripts")
+	}
+
+	useEphemeralLemonadePort(t)
+
+	binDir := t.TempDir()
+	writeFakeLemonade(t, binDir)
+	t.Setenv("PATH", binDir)
+
+	require.NoError(t, ensureLemonadePortFree())
+
+	code := run([]string{"--et", "user@host"})
+	assert.Equal(t, 1, code)
+	requirePortFree(t, lemonadePort)
+}
+
 func TestStartLemonadeDoesNotPoisonConnCh(t *testing.T) {
 	useEphemeralLemonadePort(t)
 
@@ -104,26 +137,33 @@ func TestStartLemonadeDoesNotPoisonConnCh(t *testing.T) {
 
 func writeFakeSSH(t *testing.T, dir string) {
 	t.Helper()
+	writeFakeClient(t, dir, "ssh", "-R", sshReverseTunnel)
+}
+
+func writeFakeClient(t *testing.T, dir, name, tunnelFlag, tunnel string) {
+	t.Helper()
 	script := `#!/bin/sh
+flag='` + tunnelFlag + `'
+tunnel='` + tunnel + `'
 for arg in "$@"; do
-  if [ "$arg" = "-R" ]; then
-    saw_r=1
+  if [ "$arg" = "$flag" ]; then
+    saw_flag=1
     continue
   fi
-  if [ -n "$saw_r" ]; then
-    if [ "$arg" = "2489:127.0.0.1:2489" ]; then
+  if [ -n "$saw_flag" ]; then
+    if [ "$arg" = "$tunnel" ]; then
       exit 0
     fi
-    saw_r=
+    saw_flag=
   fi
   case "$arg" in
-    -R2489:127.0.0.1:2489) exit 0 ;;
+    ${flag}${tunnel}) exit 0 ;;
   esac
 done
 echo "missing reverse tunnel: $*" >&2
 exit 1
 `
-	path := filepath.Join(dir, "ssh")
+	path := filepath.Join(dir, name)
 	require.NoError(t, os.WriteFile(path, []byte(script), 0o755))
 }
 

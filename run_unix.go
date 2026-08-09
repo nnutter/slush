@@ -13,9 +13,9 @@ import (
 	"golang.org/x/term"
 )
 
-// runSession runs the remote client with the given args, attaching the current
-// terminal as completely as possible while remaining the parent so callers can
-// clean up after Wait returns.
+// runSession runs the remote client (ssh or et) with the given args, attaching
+// the current terminal as completely as possible while remaining the parent so
+// callers can clean up after Wait returns.
 func runSession(binPath string, args []string) (int, error) {
 	cmd := exec.Command(binPath, args...)
 	cmd.Stdin = os.Stdin

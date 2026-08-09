@@ -349,16 +349,38 @@ fi
 	}
 
 	script := `#!/bin/sh
+controlpath=
+prev=
+op=
 for arg in "$@"; do
-  if [ "$arg" = "-O" ]; then
-    exit 0
+  if [ "$prev" = "-o" ]; then
+    case "$arg" in
+      ControlPath=*) controlpath=${arg#ControlPath=} ;;
+    esac
+    prev=
+    continue
+  fi
+  case "$arg" in
+    -o) prev=-o; continue ;;
+    -O) op=1; continue ;;
+  esac
+  if [ -n "$op" ]; then
+    if [ "$arg" = "check" ]; then
+      if [ -n "$controlpath" ] && [ -e "$controlpath" ]; then
+        exit 0
+      fi
+      exit 1
+    fi
+    if [ "$arg" = "exit" ]; then
+      exit 0
+    fi
+    echo "unsupported control command: $arg" >&2
+    exit 1
   fi
 done
 
-saw_f=
 saw_n=
 saw_tunnel=
-controlpath=
 prev=
 for arg in "$@"; do
   if [ "$prev" = "-o" ]; then
@@ -376,20 +398,22 @@ for arg in "$@"; do
     continue
   fi
   case "$arg" in
-    -f) saw_f=1 ;;
     -N) saw_n=1 ;;
     -R) prev=-R ;;
     -o) prev=-o ;;
   esac
 done
 
-if [ -z "$saw_f" ] || [ -z "$saw_n" ] || [ -z "$saw_tunnel" ] || [ -z "$controlpath" ]; then
+if [ -z "$saw_n" ] || [ -z "$saw_tunnel" ] || [ -z "$controlpath" ]; then
   echo "unexpected ssh args: $*" >&2
   exit 1
 fi
 ` + extraChecks.String() + `
 : > "$controlpath"
-exit 0
+# Stay alive as the ControlMaster until slush kills this child.
+while true; do
+  sleep 60
+done
 `
 	path := filepath.Join(dir, "ssh")
 	require.NoError(t, os.WriteFile(path, []byte(script), 0o755))

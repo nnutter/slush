@@ -5,7 +5,23 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync"
+	"time"
 )
+
+const sshTunnelReadyWait = 30 * time.Second
+
+// sshTunnel is a background ssh ControlMaster held as a child process (not
+// ssh -f) so it cannot outlive slush and leave remote listen ports stuck.
+type sshTunnel struct {
+	cmd         *exec.Cmd
+	waitCh      chan error
+	waitOnce    sync.Once
+	waitErr     error
+	sshPath     string
+	host        string
+	controlPath string
+}
 
 // runMoshSession keeps an ssh tunnel up for Lemonade and any -L/-R forwards,
 // and runs mosh for the interactive session. mosh cannot carry port forwards
@@ -63,10 +79,11 @@ func runTunneledSession(
 	defer os.RemoveAll(dir)
 	controlPath := filepath.Join(dir, "control")
 
-	if err := startSSHTunnel(sshPath, sshHost, controlPath, forwards); err != nil {
+	tunnel, err := startSSHTunnel(sshPath, sshHost, controlPath, forwards)
+	if err != nil {
 		return 0, err
 	}
-	defer stopSSHTunnel(sshPath, sshHost, controlPath)
+	defer tunnel.Stop()
 
 	if prepareArgs != nil {
 		clientArgs = prepareArgs(clientArgs, controlPath)
@@ -74,15 +91,15 @@ func runTunneledSession(
 	return runSession(clientPath, clientArgs)
 }
 
-// startSSHTunnel opens a background ssh master with Lemonade and any extra
-// -L/-R forwards. ssh -f returns only after authentication and forward setup.
-func startSSHTunnel(sshPath, host, controlPath string, forwards []string) error {
+// startSSHTunnel opens an ssh master child with Lemonade and any extra -L/-R
+// forwards, waiting until the control socket exists (forwards and auth OK).
+func startSSHTunnel(sshPath, host, controlPath string, forwards []string) (*sshTunnel, error) {
 	args := []string{
-		"-f",
 		"-N",
 		"-o", "ExitOnForwardFailure=yes",
 		"-o", "ControlMaster=yes",
 		"-o", "ControlPath=" + controlPath,
+		"-o", "ControlPersist=no",
 	}
 	args = append(args, forwards...)
 	args = append(args, host)
@@ -92,10 +109,84 @@ func startSSHTunnel(sshPath, host, controlPath string, forwards []string) error 
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("start ssh tunnel: %w", err)
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("start ssh tunnel: %w", err)
 	}
-	return nil
+
+	waitCh := make(chan error, 1)
+	go func() { waitCh <- cmd.Wait() }()
+
+	tunnel := &sshTunnel{
+		cmd:         cmd,
+		waitCh:      waitCh,
+		sshPath:     sshPath,
+		host:        host,
+		controlPath: controlPath,
+	}
+	if err := tunnel.waitUntilReady(sshTunnelReadyWait); err != nil {
+		tunnel.Stop()
+		return nil, err
+	}
+	return tunnel, nil
+}
+
+func (t *sshTunnel) waitUntilReady(timeout time.Duration) error {
+	deadline := time.After(timeout)
+	ticker := time.NewTicker(20 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case err := <-t.waitCh:
+			t.noteWait(err)
+			if err != nil {
+				return fmt.Errorf("start ssh tunnel: %w", err)
+			}
+			return fmt.Errorf("start ssh tunnel: ssh exited before becoming ready")
+		case <-deadline:
+			return fmt.Errorf("start ssh tunnel: timed out waiting for control socket")
+		case <-ticker.C:
+			// -O check succeeds only after the master is up; with
+			// ExitOnForwardFailure that includes forward setup.
+			if t.checkMaster() == nil {
+				return nil
+			}
+		}
+	}
+}
+
+func (t *sshTunnel) checkMaster() error {
+	cmd := exec.Command(t.sshPath,
+		"-o", "ControlPath="+t.controlPath,
+		"-O", "check",
+		t.host,
+	)
+	return cmd.Run()
+}
+
+func (t *sshTunnel) noteWait(err error) {
+	t.waitOnce.Do(func() {
+		t.waitErr = err
+	})
+}
+
+func (t *sshTunnel) wait() error {
+	t.waitOnce.Do(func() {
+		t.waitErr = <-t.waitCh
+	})
+	return t.waitErr
+}
+
+// Stop ends the master via ControlMaster and kills the child if needed.
+func (t *sshTunnel) Stop() {
+	if t == nil {
+		return
+	}
+	stopSSHTunnel(t.sshPath, t.host, t.controlPath)
+	if t.cmd != nil && t.cmd.Process != nil {
+		_ = t.cmd.Process.Kill()
+	}
+	_ = t.wait()
 }
 
 func stopSSHTunnel(sshPath, host, controlPath string) {

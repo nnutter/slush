@@ -29,17 +29,19 @@ func run(args []string) int {
 		return 1
 	}
 
-	binName := clientBinary(mode)
-	binPath, err := exec.LookPath(binName)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "slush: %s not found on PATH: %v\n", binName, err)
-		return 1
-	}
-
-	code, err := runSession(binPath, withReverseTunnel(args, reverseTunnelFlag(mode), reverseTunnelArg(mode)))
+	code, err := runClient(mode, args)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "slush: %v\n", err)
 		return 1
 	}
 	return code
+}
+
+func runClient(mode clientMode, args []string) (int, error) {
+	binName := clientBinary(mode)
+	binPath, err := exec.LookPath(binName)
+	if err != nil {
+		return 0, fmt.Errorf("%s not found on PATH: %w", binName, err)
+	}
+	return runSession(binPath, withReverseTunnel(args, reverseTunnelFlag(mode), reverseTunnelArg(mode)))
 }

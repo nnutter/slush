@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -45,6 +46,25 @@ func TestRunEndToEndWithFakeBinaries(t *testing.T) {
 	requirePortFree(t, lemonadePort)
 }
 
+func TestRunEndToEndSSHWithLocalForward(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake binary helpers are shell scripts")
+	}
+
+	useEphemeralLemonadePort(t)
+
+	binDir := t.TempDir()
+	writeFakeSSHExpecting(t, binDir, "-R", sshReverseTunnel, "-L", "8080:127.0.0.1:8080")
+	writeFakeLemonade(t, binDir)
+	t.Setenv("PATH", binDir)
+
+	require.NoError(t, ensureLemonadePortFree())
+
+	code := run([]string{"-L", "8080:127.0.0.1:8080", "user@host", "true"})
+	assert.Equal(t, 0, code)
+	requirePortFree(t, lemonadePort)
+}
+
 func TestRunEndToEndWithET(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("fake binary helpers are shell scripts")
@@ -53,13 +73,34 @@ func TestRunEndToEndWithET(t *testing.T) {
 	useEphemeralLemonadePort(t)
 
 	binDir := t.TempDir()
-	writeFakeClient(t, binDir, "et", "-r", etReverseTunnel)
+	writeFakeSSHTunnel(t, binDir)
+	writeFakeET(t, binDir)
 	writeFakeLemonade(t, binDir)
 	t.Setenv("PATH", binDir)
 
 	require.NoError(t, ensureLemonadePortFree())
 
-	code := run([]string{"--et", "user@host", "true"})
+	code := run([]string{"--et", "user@host"})
+	assert.Equal(t, 0, code)
+	requirePortFree(t, lemonadePort)
+}
+
+func TestRunEndToEndETWithLocalForward(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake binary helpers are shell scripts")
+	}
+
+	useEphemeralLemonadePort(t)
+
+	binDir := t.TempDir()
+	writeFakeSSHTunnel(t, binDir, "-L", "8080:127.0.0.1:8080")
+	writeFakeET(t, binDir)
+	writeFakeLemonade(t, binDir)
+	t.Setenv("PATH", binDir)
+
+	require.NoError(t, ensureLemonadePortFree())
+
+	code := run([]string{"--et", "-L", "8080:127.0.0.1:8080", "user@host"})
 	assert.Equal(t, 0, code)
 	requirePortFree(t, lemonadePort)
 }
@@ -91,6 +132,7 @@ func TestRunETNotFound(t *testing.T) {
 	useEphemeralLemonadePort(t)
 
 	binDir := t.TempDir()
+	writeFakeSSHTunnel(t, binDir)
 	writeFakeLemonade(t, binDir)
 	t.Setenv("PATH", binDir)
 
@@ -117,6 +159,26 @@ func TestRunEndToEndWithMosh(t *testing.T) {
 	require.NoError(t, ensureLemonadePortFree())
 
 	code := run([]string{"--mosh", "user@host"})
+	assert.Equal(t, 0, code)
+	requirePortFree(t, lemonadePort)
+}
+
+func TestRunEndToEndMoshWithLocalForward(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake binary helpers are shell scripts")
+	}
+
+	useEphemeralLemonadePort(t)
+
+	binDir := t.TempDir()
+	writeFakeSSHTunnel(t, binDir, "-L", "8080:127.0.0.1:8080")
+	writeFakeMosh(t, binDir)
+	writeFakeLemonade(t, binDir)
+	t.Setenv("PATH", binDir)
+
+	require.NoError(t, ensureLemonadePortFree())
+
+	code := run([]string{"--mosh", "-L", "8080:127.0.0.1:8080", "user@host"})
 	assert.Equal(t, 0, code)
 	requirePortFree(t, lemonadePort)
 }
@@ -214,11 +276,78 @@ func TestStartLemonadeDoesNotPoisonConnCh(t *testing.T) {
 
 func writeFakeSSH(t *testing.T, dir string) {
 	t.Helper()
-	writeFakeClient(t, dir, "ssh", "-R", sshReverseTunnel)
+	writeFakeSSHExpecting(t, dir, "-R", sshReverseTunnel)
 }
 
-func writeFakeSSHTunnel(t *testing.T, dir string) {
+func writeFakeSSHExpecting(t *testing.T, dir string, required ...string) {
 	t.Helper()
+	if len(required)%2 != 0 {
+		t.Fatalf("required forwards must be flag/spec pairs, got %v", required)
+	}
+
+	var checks strings.Builder
+	for i := 0; i < len(required); i += 2 {
+		flag := required[i]
+		spec := required[i+1]
+		checks.WriteString(`
+flag='` + flag + `'
+spec='` + spec + `'
+saw=
+prev=
+for arg in "$@"; do
+  if [ "$prev" = "$flag" ] && [ "$arg" = "$spec" ]; then
+    saw=1
+    break
+  fi
+  prev=
+  case "$arg" in
+    "$flag") prev="$flag" ;;
+    ${flag}${spec}) saw=1; break ;;
+  esac
+done
+if [ -z "$saw" ]; then
+  echo "missing $flag $spec: $*" >&2
+  exit 1
+fi
+`)
+	}
+
+	script := "#!/bin/sh\n" + checks.String() + "exit 0\n"
+	path := filepath.Join(dir, "ssh")
+	require.NoError(t, os.WriteFile(path, []byte(script), 0o755))
+}
+
+func writeFakeSSHTunnel(t *testing.T, dir string, extraForwards ...string) {
+	t.Helper()
+	if len(extraForwards)%2 != 0 {
+		t.Fatalf("extra forwards must be flag/spec pairs, got %v", extraForwards)
+	}
+
+	var extraChecks strings.Builder
+	for i := 0; i < len(extraForwards); i += 2 {
+		flag := extraForwards[i]
+		spec := extraForwards[i+1]
+		extraChecks.WriteString(`
+saw_extra=
+prev=
+for arg in "$@"; do
+  if [ "$prev" = "` + flag + `" ] && [ "$arg" = "` + spec + `" ]; then
+    saw_extra=1
+    break
+  fi
+  prev=
+  case "$arg" in
+    "` + flag + `") prev="` + flag + `" ;;
+    ` + flag + spec + `) saw_extra=1; break ;;
+  esac
+done
+if [ -z "$saw_extra" ]; then
+  echo "missing tunnel forward ` + flag + ` ` + spec + `: $*" >&2
+  exit 1
+fi
+`)
+	}
+
 	script := `#!/bin/sh
 for arg in "$@"; do
   if [ "$arg" = "-O" ]; then
@@ -254,12 +383,13 @@ for arg in "$@"; do
   esac
 done
 
-if [ -n "$saw_f" ] && [ -n "$saw_n" ] && [ -n "$saw_tunnel" ] && [ -n "$controlpath" ]; then
-  touch "$controlpath"
-  exit 0
+if [ -z "$saw_f" ] || [ -z "$saw_n" ] || [ -z "$saw_tunnel" ] || [ -z "$controlpath" ]; then
+  echo "unexpected ssh args: $*" >&2
+  exit 1
 fi
-echo "unexpected ssh args: $*" >&2
-exit 1
+` + extraChecks.String() + `
+: > "$controlpath"
+exit 0
 `
 	path := filepath.Join(dir, "ssh")
 	require.NoError(t, os.WriteFile(path, []byte(script), 0o755))
@@ -272,6 +402,10 @@ saw_host=
 saw_control=
 for arg in "$@"; do
   case "$arg" in
+    -L|-R|-L*|-R*)
+      echo "forwards must not be passed to mosh: $*" >&2
+      exit 1
+      ;;
     user@host) saw_host=1 ;;
     --ssh=*)
       case "$arg" in
@@ -290,30 +424,26 @@ exit 1
 	require.NoError(t, os.WriteFile(path, []byte(script), 0o755))
 }
 
-func writeFakeClient(t *testing.T, dir, name, tunnelFlag, tunnel string) {
+func writeFakeET(t *testing.T, dir string) {
 	t.Helper()
 	script := `#!/bin/sh
-flag='` + tunnelFlag + `'
-tunnel='` + tunnel + `'
+saw_host=
 for arg in "$@"; do
-  if [ "$arg" = "$flag" ]; then
-    saw_flag=1
-    continue
-  fi
-  if [ -n "$saw_flag" ]; then
-    if [ "$arg" = "$tunnel" ]; then
-      exit 0
-    fi
-    saw_flag=
-  fi
   case "$arg" in
-    ${flag}${tunnel}) exit 0 ;;
+    -L|-R|-L*|-R*|-r|-t|--reversetunnel*|--tunnel*)
+      echo "forwards must not be passed to et: $*" >&2
+      exit 1
+      ;;
+    user@host) saw_host=1 ;;
   esac
 done
-echo "missing reverse tunnel: $*" >&2
+if [ -n "$saw_host" ]; then
+  exit 0
+fi
+echo "unexpected et args: $*" >&2
 exit 1
 `
-	path := filepath.Join(dir, name)
+	path := filepath.Join(dir, "et")
 	require.NoError(t, os.WriteFile(path, []byte(script), 0o755))
 }
 

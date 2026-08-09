@@ -38,14 +38,21 @@ func run(args []string) int {
 }
 
 func runClient(mode clientMode, args []string) (int, error) {
-	if mode == modeMosh {
+	switch mode {
+	case modeMosh:
 		return runMoshSession(args)
+	case modeET:
+		return runETSession(args)
+	default:
+		return runSSHSession(args)
 	}
+}
 
-	binName := clientBinary(mode)
-	binPath, err := exec.LookPath(binName)
+func runSSHSession(args []string) (int, error) {
+	binPath, err := exec.LookPath("ssh")
 	if err != nil {
-		return 0, fmt.Errorf("%s not found on PATH: %w", binName, err)
+		return 0, fmt.Errorf("ssh not found on PATH: %w", err)
 	}
-	return runSession(binPath, withReverseTunnel(args, reverseTunnelFlag(mode), reverseTunnelArg(mode)))
+	// -L/-R stay in args for ssh; only Lemonade is injected when missing.
+	return runSession(binPath, withReverseTunnel(args))
 }

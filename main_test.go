@@ -101,6 +101,83 @@ func TestRunETNotFound(t *testing.T) {
 	requirePortFree(t, lemonadePort)
 }
 
+func TestRunEndToEndWithMosh(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake binary helpers are shell scripts")
+	}
+
+	useEphemeralLemonadePort(t)
+
+	binDir := t.TempDir()
+	writeFakeSSHTunnel(t, binDir)
+	writeFakeMosh(t, binDir)
+	writeFakeLemonade(t, binDir)
+	t.Setenv("PATH", binDir)
+
+	require.NoError(t, ensureLemonadePortFree())
+
+	code := run([]string{"--mosh", "user@host"})
+	assert.Equal(t, 0, code)
+	requirePortFree(t, lemonadePort)
+}
+
+func TestRunMoshNotFound(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake binary helpers are shell scripts")
+	}
+
+	useEphemeralLemonadePort(t)
+
+	binDir := t.TempDir()
+	writeFakeSSHTunnel(t, binDir)
+	writeFakeLemonade(t, binDir)
+	t.Setenv("PATH", binDir)
+
+	require.NoError(t, ensureLemonadePortFree())
+
+	code := run([]string{"--mosh", "user@host"})
+	assert.Equal(t, 1, code)
+	requirePortFree(t, lemonadePort)
+}
+
+func TestRunMoshMissingHost(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake binary helpers are shell scripts")
+	}
+
+	useEphemeralLemonadePort(t)
+
+	binDir := t.TempDir()
+	writeFakeSSHTunnel(t, binDir)
+	writeFakeMosh(t, binDir)
+	writeFakeLemonade(t, binDir)
+	t.Setenv("PATH", binDir)
+
+	require.NoError(t, ensureLemonadePortFree())
+
+	code := run([]string{"--mosh", "-p", "60001"})
+	assert.Equal(t, 1, code)
+	requirePortFree(t, lemonadePort)
+}
+
+func TestRunModeFlagsMutuallyExclusive(t *testing.T) {
+	useEphemeralLemonadePort(t)
+
+	binDir := t.TempDir()
+	writeFakeLemonade(t, binDir)
+	t.Setenv("PATH", binDir)
+
+	require.NoError(t, ensureLemonadePortFree())
+
+	code := run([]string{"--et", "--mosh", "user@host"})
+	assert.Equal(t, 1, code)
+	requirePortFree(t, lemonadePort)
+}
+
+// TestStartLemonadeDoesNotPoisonConnCh ensures readiness probing never dials
+// the lemonade port. Real lemonade accepts every TCP connection onto a one-slot
+// channel and only receives from it inside RPC handlers; a connect/close leaves
+// a stale entry and deadlocks the next RPC (and can panic the server).
 func TestStartLemonadeDoesNotPoisonConnCh(t *testing.T) {
 	useEphemeralLemonadePort(t)
 
@@ -138,6 +215,79 @@ func TestStartLemonadeDoesNotPoisonConnCh(t *testing.T) {
 func writeFakeSSH(t *testing.T, dir string) {
 	t.Helper()
 	writeFakeClient(t, dir, "ssh", "-R", sshReverseTunnel)
+}
+
+func writeFakeSSHTunnel(t *testing.T, dir string) {
+	t.Helper()
+	script := `#!/bin/sh
+for arg in "$@"; do
+  if [ "$arg" = "-O" ]; then
+    exit 0
+  fi
+done
+
+saw_f=
+saw_n=
+saw_tunnel=
+controlpath=
+prev=
+for arg in "$@"; do
+  if [ "$prev" = "-o" ]; then
+    case "$arg" in
+      ControlPath=*) controlpath=${arg#ControlPath=} ;;
+    esac
+    prev=
+    continue
+  fi
+  if [ "$prev" = "-R" ]; then
+    if [ "$arg" = "2489:127.0.0.1:2489" ]; then
+      saw_tunnel=1
+    fi
+    prev=
+    continue
+  fi
+  case "$arg" in
+    -f) saw_f=1 ;;
+    -N) saw_n=1 ;;
+    -R) prev=-R ;;
+    -o) prev=-o ;;
+  esac
+done
+
+if [ -n "$saw_f" ] && [ -n "$saw_n" ] && [ -n "$saw_tunnel" ] && [ -n "$controlpath" ]; then
+  touch "$controlpath"
+  exit 0
+fi
+echo "unexpected ssh args: $*" >&2
+exit 1
+`
+	path := filepath.Join(dir, "ssh")
+	require.NoError(t, os.WriteFile(path, []byte(script), 0o755))
+}
+
+func writeFakeMosh(t *testing.T, dir string) {
+	t.Helper()
+	script := `#!/bin/sh
+saw_host=
+saw_control=
+for arg in "$@"; do
+  case "$arg" in
+    user@host) saw_host=1 ;;
+    --ssh=*)
+      case "$arg" in
+        *ControlPath=*) saw_control=1 ;;
+      esac
+      ;;
+  esac
+done
+if [ -n "$saw_host" ] && [ -n "$saw_control" ]; then
+  exit 0
+fi
+echo "unexpected mosh args: $*" >&2
+exit 1
+`
+	path := filepath.Join(dir, "mosh")
+	require.NoError(t, os.WriteFile(path, []byte(script), 0o755))
 }
 
 func writeFakeClient(t *testing.T, dir, name, tunnelFlag, tunnel string) {

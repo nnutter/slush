@@ -1,6 +1,10 @@
 package main
 
-import "slices"
+import (
+	"fmt"
+	"slices"
+	"strings"
+)
 
 // sshReverseTunnel is OpenSSH -R syntax: [bind_address:]port:host:hostport
 // with an implicit bind on the remote side.
@@ -16,6 +20,7 @@ type clientMode int
 const (
 	modeSSH clientMode = iota
 	modeET
+	modeMosh
 )
 
 // takeModeFlags consumes leading slush mode flags and returns the selected
@@ -26,7 +31,16 @@ func takeModeFlags(args []string) (clientMode, []string, error) {
 	for len(rest) > 0 {
 		switch rest[0] {
 		case "--et":
+			if mode == modeMosh {
+				return 0, nil, fmt.Errorf("--et and --mosh are mutually exclusive")
+			}
 			mode = modeET
+			rest = rest[1:]
+		case "--mosh":
+			if mode == modeET {
+				return 0, nil, fmt.Errorf("--et and --mosh are mutually exclusive")
+			}
+			mode = modeMosh
 			rest = rest[1:]
 		default:
 			return mode, rest, nil
@@ -95,4 +109,64 @@ func isCombinedShortTunnel(arg, flag, tunnel string) bool {
 	return len(arg) > len(flag) &&
 		arg[:len(flag)] == flag &&
 		arg[len(flag):] == tunnel
+}
+
+// moshDestination returns the [user@]host operand from mosh-style args.
+func moshDestination(args []string) (string, error) {
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--" {
+			if i+1 >= len(args) {
+				return "", fmt.Errorf("missing mosh destination host")
+			}
+			return args[i+1], nil
+		}
+		if !strings.HasPrefix(arg, "-") {
+			return arg, nil
+		}
+		if strings.HasPrefix(arg, "--") && strings.Contains(arg, "=") {
+			continue
+		}
+		if isMoshCombinedShortOpt(arg) {
+			continue
+		}
+		if moshFlagTakesArg(arg) {
+			i++
+			continue
+		}
+	}
+	return "", fmt.Errorf("missing mosh destination host")
+}
+
+func moshFlagTakesArg(flag string) bool {
+	switch flag {
+	case "--client", "--server", "--predict", "--family",
+		"--port", "-p", "--ssh", "--bind-server",
+		"--experimental-remote-ip":
+		return true
+	default:
+		return false
+	}
+}
+
+func isMoshCombinedShortOpt(arg string) bool {
+	return strings.HasPrefix(arg, "-p") && arg != "-p" && !strings.HasPrefix(arg, "--")
+}
+
+// withMoshSSHControlPath ensures mosh's bootstrap ssh reuses the ControlMaster
+// socket that holds the Lemonade reverse tunnel.
+func withMoshSSHControlPath(args []string, controlPath string) []string {
+	opt := "-o ControlPath=" + controlPath
+	out := slices.Clone(args)
+	for i, arg := range out {
+		if arg == "--ssh" && i+1 < len(out) {
+			out[i+1] = out[i+1] + " " + opt
+			return out
+		}
+		if after, found := strings.CutPrefix(arg, "--ssh="); found {
+			out[i] = "--ssh=" + after + " " + opt
+			return out
+		}
+	}
+	return slices.Concat([]string{"--ssh=ssh " + opt}, args)
 }

@@ -38,6 +38,10 @@ func run(args []string) int {
 }
 
 func runClient(mode clientMode, args []string) (int, error) {
+	if mode == modeMosh {
+		return runMoshSession(args)
+	}
+
 	binName := clientBinary(mode)
 	binPath, err := exec.LookPath(binName)
 	if err != nil {

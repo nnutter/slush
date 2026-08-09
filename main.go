@@ -29,7 +29,7 @@ func run(args []string) int {
 		return 1
 	}
 
-	code, err := runSSH(sshPath, withReverseTunnel(args))
+	code, err := runSession(sshPath, withReverseTunnel(args))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "slush: %v\n", err)
 		return 1

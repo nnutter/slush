@@ -387,7 +387,7 @@ fi
 ` + extraChecks.String() + `
 : > "$controlpath"
 while true; do
-  sleep 60
+  sleep 60 2>/dev/null
 done
 `
 	path := filepath.Join(dir, "ssh")
@@ -509,7 +509,7 @@ fi
 : > "$controlpath"
 # Stay alive as the ControlMaster until slush kills this child.
 while true; do
-  sleep 60
+  sleep 60 2>/dev/null
 done
 `
 	path := filepath.Join(dir, "ssh")

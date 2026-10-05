@@ -415,32 +415,32 @@ func TestWithReverseTunnel(t *testing.T) {
 		{
 			name: "injects when missing",
 			in:   []string{"user@host"},
-			want: []string{"-R", sshReverseTunnel, "user@host"},
+			want: []string{"-R", clipboardReverseTunnel, "user@host"},
 		},
 		{
 			name: "skips when separate -R already present",
-			in:   []string{"-R", sshReverseTunnel, "user@host"},
-			want: []string{"-R", sshReverseTunnel, "user@host"},
+			in:   []string{"-R", clipboardReverseTunnel, "user@host"},
+			want: []string{"-R", clipboardReverseTunnel, "user@host"},
 		},
 		{
 			name: "skips when combined -R already present",
-			in:   []string{"-R" + sshReverseTunnel, "user@host"},
-			want: []string{"-R" + sshReverseTunnel, "user@host"},
+			in:   []string{"-R" + clipboardReverseTunnel, "user@host"},
+			want: []string{"-R" + clipboardReverseTunnel, "user@host"},
 		},
 		{
 			name: "injects when different -R present",
 			in:   []string{"-R", "2222:127.0.0.1:22", "user@host"},
-			want: []string{"-R", sshReverseTunnel, "-R", "2222:127.0.0.1:22", "user@host"},
+			want: []string{"-R", clipboardReverseTunnel, "-R", "2222:127.0.0.1:22", "user@host"},
 		},
 		{
 			name: "preserves -L forwards",
 			in:   []string{"-L", "8080:127.0.0.1:8080", "user@host"},
-			want: []string{"-R", sshReverseTunnel, "-L", "8080:127.0.0.1:8080", "user@host"},
+			want: []string{"-R", clipboardReverseTunnel, "-L", "8080:127.0.0.1:8080", "user@host"},
 		},
 		{
 			name: "empty args",
 			in:   nil,
-			want: []string{"-R", sshReverseTunnel},
+			want: []string{"-R", clipboardReverseTunnel},
 		},
 	}
 

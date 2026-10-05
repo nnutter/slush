@@ -6,9 +6,10 @@ import (
 	"strings"
 )
 
-// sshReverseTunnel is OpenSSH -R syntax: [bind_address:]port:host:hostport
-// with an implicit bind on the remote side.
-const sshReverseTunnel = "2489:127.0.0.1:2489"
+// clipboardReverseTunnel is OpenSSH -R syntax:
+// [bind_address:]port:host:hostport with an implicit bind on the
+// remote side. It carries the clipboard protocol to the local server.
+const clipboardReverseTunnel = "2489:127.0.0.1:2489"
 
 type clientMode int
 
@@ -216,13 +217,13 @@ func withSSHControlPath(args []string, params sessionParams) []string {
 	return slices.Concat([]string{"-o", "ControlPath=" + params.controlPath}, args)
 }
 
-// withReverseTunnel returns args with the Lemonade reverse tunnel injected
-// unless an identical -R tunnel is already present.
+// withReverseTunnel returns args with the clipboard reverse tunnel
+// injected unless an identical -R tunnel is already present.
 func withReverseTunnel(args []string) []string {
-	if hasSSHForward(args, "-R", sshReverseTunnel) {
+	if hasSSHForward(args, "-R", clipboardReverseTunnel) {
 		return slices.Clone(args)
 	}
-	return slices.Concat([]string{"-R", sshReverseTunnel}, args)
+	return slices.Concat([]string{"-R", clipboardReverseTunnel}, args)
 }
 
 func hasSSHForward(args []string, flag, spec string) bool {

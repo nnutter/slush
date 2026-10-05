@@ -29,6 +29,19 @@ import (
 	"time"
 )
 
+// portIsBound reports whether something is listening on ":"+port by
+// trying to bind that address. Binding never completes a TCP
+// handshake, so it is safe against servers that misbehave when
+// prodded with a bare connection.
+func portIsBound(port int) bool {
+	ln, err := net.Listen("tcp4", "127.0.0.1:"+strconv.Itoa(port))
+	if err != nil {
+		return true
+	}
+	_ = ln.Close()
+	return false
+}
+
 const (
 	defaultClipboardPort = 2489
 
@@ -57,8 +70,8 @@ type clipboardServer struct {
 }
 
 // ensureClipboardPortFree returns an error if the clipboard port cannot
-// be bound. It never dials: like lemonade's server, endpoints behind
-// this port may misbehave when prodded with a bare connection.
+// be bound. It binds rather than dials so readiness checks can never
+// wedge the server with a half-open connection.
 func ensureClipboardPortFree() error {
 	if portIsBound(clipboardPort) {
 		return fmt.Errorf("clipboard server already running on :%d; stop it before using slush", clipboardPort)

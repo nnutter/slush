@@ -26,23 +26,23 @@ func run(args []string) int {
 		return runValidate(mode, args[1:])
 	}
 
-	if err := ensureLemonadePortFree(); err != nil {
-		fmt.Fprintf(os.Stderr, "slush: %v\n", err)
-		return 1
-	}
-
-	server, err := startLemonade()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "slush: %v\n", err)
-		return 1
-	}
-	defer server.Stop()
-
 	token, err := generateClipboardToken()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "slush: %v\n", err)
 		return 1
 	}
+
+	if err := ensureClipboardPortFree(); err != nil {
+		fmt.Fprintf(os.Stderr, "slush: %v\n", err)
+		return 1
+	}
+
+	server, err := startClipboardServer(token)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "slush: %v\n", err)
+		return 1
+	}
+	defer server.Stop()
 
 	code, err := runClient(mode, args, token)
 	if err != nil {

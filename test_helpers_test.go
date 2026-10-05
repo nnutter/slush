@@ -1,32 +1,32 @@
 package main
 
 import (
-	"net"
-	"strconv"
+	"os"
+	"path/filepath"
+	"runtime"
 	"testing"
+	"time"
 )
 
-// useEphemeralLemonadePort points lemonadePort at a free local port for the
-// duration of the test so concurrent/local lemonade instances do not conflict.
-func useEphemeralLemonadePort(t *testing.T) {
+// emptyPath returns a PATH with no usable binaries: an empty dir, plus
+// an extra missing entry on unix so bare command names still fail.
+func emptyPath(t *testing.T) string {
 	t.Helper()
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("listen: %v", err)
+	dir := t.TempDir()
+	if runtime.GOOS == "windows" {
+		return dir
 	}
-	_, portStr, err := net.SplitHostPort(ln.Addr().String())
-	if err != nil {
-		_ = ln.Close()
-		t.Fatalf("split host port: %v", err)
-	}
-	port, err := strconv.Atoi(portStr)
-	if err != nil {
-		_ = ln.Close()
-		t.Fatalf("parse port: %v", err)
-	}
-	_ = ln.Close()
+	return dir + string(os.PathListSeparator) + filepath.Join(dir, "nope")
+}
 
-	previous := lemonadePort
-	lemonadePort = port
-	t.Cleanup(func() { lemonadePort = previous })
+func requirePortFree(t *testing.T, port int) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if !portIsBound(port) {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf(":%d still bound", port)
 }

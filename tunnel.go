@@ -23,7 +23,7 @@ type sshTunnel struct {
 	controlPath string
 }
 
-// runMoshSession keeps an ssh tunnel up for Lemonade and any -L/-R forwards,
+// runMoshSession keeps an ssh tunnel up for clipboard and any -L/-R forwards,
 // and runs mosh for the interactive session. mosh cannot carry port forwards
 // itself because it tears down its bootstrap ssh connection after start.
 func runMoshSession(args []string, token string) (int, error) {
@@ -46,7 +46,7 @@ func runMoshSession(args []string, token string) (int, error) {
 	return runTunneledSession(moshPath, host, clientArgs, forwards, token, withMoshSSHControlPath)
 }
 
-// runETSession keeps an ssh tunnel up for Lemonade and any -L/-R forwards, and
+// runETSession keeps an ssh tunnel up for clipboard and any -L/-R forwards, and
 // runs et for the interactive session. Forwards always use ssh, not et -t/-r.
 func runETSession(args []string, token string) (int, error) {
 	forwards, args, err := takeSSHForwards(args)
@@ -72,7 +72,7 @@ type sessionParams struct {
 }
 
 // runTunneledSession starts a background ssh ControlMaster with the given
-// forwards (plus Lemonade), provisions the remote clipboard shims, runs
+// forwards (plus clipboard), provisions the remote clipboard shims, runs
 // clientPath, then tears the tunnel down. Provisioning failures degrade
 // to a plain session with a warning; validate (not the session) is
 // where clipboard forwarding is enforced.
@@ -125,7 +125,7 @@ func establishSession(sshPath, sshHost string, forwards []string, token string) 
 	return teardown, controlPath, nil
 }
 
-// startSSHTunnel opens an ssh master child with Lemonade and any extra -L/-R
+// startSSHTunnel opens an ssh master child with clipboard and any extra -L/-R
 // forwards, waiting until the control socket exists (forwards and auth OK).
 func startSSHTunnel(sshPath, host, controlPath string, forwards []string) (*sshTunnel, error) {
 	args := []string{

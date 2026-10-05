@@ -163,6 +163,24 @@ func TestClipboardMalformed(t *testing.T) {
 	}
 }
 
+// TestClipboardServerToleratesBareConnect ensures a plain TCP connect
+// with no request never wedges the server: unlike lemonade's one-slot
+// connection channel, each connection is independent, so probes and
+// port scans cannot deadlock the next real request.
+func TestClipboardServerToleratesBareConnect(t *testing.T) {
+	useEphemeralClipboardPort(t)
+	server, err := startClipboardServer("test-token")
+	require.NoError(t, err)
+	t.Cleanup(server.Stop)
+
+	conn, err := net.DialTimeout("tcp", "127.0.0.1:"+strconv.Itoa(clipboardPort), 5*time.Second)
+	require.NoError(t, err)
+	require.NoError(t, conn.Close())
+
+	line, _ := clipboardExchange(t, "SLUSH1 test-token HELLO", nil)
+	assert.Equal(t, "OK slush-clipboard 1", line)
+}
+
 func TestClipboardCopyRejectsWithoutBackend(t *testing.T) {
 	useEphemeralClipboardPort(t)
 	t.Setenv("PATH", emptyPath(t))

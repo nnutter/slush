@@ -274,7 +274,7 @@ func TestSSHHostOperand(t *testing.T) {
 }
 
 func TestWithSSHControlPath(t *testing.T) {
-	got := withSSHControlPath([]string{"user@host"}, "/tmp/c")
+	got := withSSHControlPath([]string{"user@host"}, sessionParams{controlPath: "/tmp/c"})
 	assert.Equal(t, []string{"-o", "ControlPath=/tmp/c", "user@host"}, got)
 }
 
@@ -480,7 +480,7 @@ func TestWithMoshSSHControlPath(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := withMoshSSHControlPath(tt.in, "/tmp/c")
+			got := withMoshSSHControlPath(tt.in, sessionParams{controlPath: "/tmp/c"})
 			assert.Equal(t, tt.want, got)
 		})
 	}

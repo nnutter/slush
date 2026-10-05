@@ -26,7 +26,7 @@ type sshTunnel struct {
 // runMoshSession keeps an ssh tunnel up for Lemonade and any -L/-R forwards,
 // and runs mosh for the interactive session. mosh cannot carry port forwards
 // itself because it tears down its bootstrap ssh connection after start.
-func runMoshSession(args []string) (int, error) {
+func runMoshSession(args []string, token string) (int, error) {
 	forwards, args, err := takeSSHForwards(args)
 	if err != nil {
 		return 0, err
@@ -39,12 +39,12 @@ func runMoshSession(args []string) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("mosh not found on PATH: %w", err)
 	}
-	return runTunneledSession(moshPath, host, args, forwards, withMoshSSHControlPath)
+	return runTunneledSession(moshPath, host, args, forwards, token, withMoshSSHControlPath)
 }
 
 // runETSession keeps an ssh tunnel up for Lemonade and any -L/-R forwards, and
 // runs et for the interactive session. Forwards always use ssh, not et -t/-r.
-func runETSession(args []string) (int, error) {
+func runETSession(args []string, token string) (int, error) {
 	forwards, args, err := takeSSHForwards(args)
 	if err != nil {
 		return 0, err
@@ -57,15 +57,26 @@ func runETSession(args []string) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("et not found on PATH: %w", err)
 	}
-	return runTunneledSession(etPath, sshHostFromETDestination(host), args, forwards, nil)
+	return runTunneledSession(etPath, sshHostFromETDestination(host), args, forwards, token, nil)
+}
+
+// sessionParams carries per-session values into client arg preparation
+// and remote provisioning.
+type sessionParams struct {
+	controlPath string
+	token       string
 }
 
 // runTunneledSession starts a background ssh ControlMaster with the given
-// forwards (plus Lemonade), runs clientPath, then tears the tunnel down.
+// forwards (plus Lemonade), provisions the remote clipboard shims, runs
+// clientPath, then tears the tunnel down. Provisioning failures degrade
+// to a plain session with a warning; validate (not the session) is
+// where clipboard forwarding is enforced.
 func runTunneledSession(
 	clientPath, sshHost string,
 	clientArgs, forwards []string,
-	prepareArgs func([]string, string) []string,
+	token string,
+	prepareArgs func([]string, sessionParams) []string,
 ) (int, error) {
 	sshPath, err := exec.LookPath("ssh")
 	if err != nil {
@@ -85,8 +96,13 @@ func runTunneledSession(
 	}
 	defer tunnel.Stop()
 
+	params := sessionParams{controlPath: controlPath, token: token}
+	if err := provisionRemote(sshPath, sshHost, params); err != nil {
+		fmt.Fprintf(os.Stderr, "slush: clipboard provisioning: %v (continuing without clipboard forwarding)\n", err)
+	}
+
 	if prepareArgs != nil {
-		clientArgs = prepareArgs(clientArgs, controlPath)
+		clientArgs = prepareArgs(clientArgs, params)
 	}
 	return runSession(clientPath, clientArgs, clientPath == sshPath)
 }

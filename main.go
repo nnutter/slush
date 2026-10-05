@@ -29,7 +29,13 @@ func run(args []string) int {
 		return 1
 	}
 
-	code, err := runClient(mode, args)
+	token, err := generateClipboardToken()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "slush: %v\n", err)
+		return 1
+	}
+
+	code, err := runClient(mode, args, token)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "slush: %v\n", err)
 		return 1
@@ -37,18 +43,18 @@ func run(args []string) int {
 	return code
 }
 
-func runClient(mode clientMode, args []string) (int, error) {
+func runClient(mode clientMode, args []string, token string) (int, error) {
 	switch mode {
 	case modeMosh:
-		return runMoshSession(args)
+		return runMoshSession(args, token)
 	case modeET:
-		return runETSession(args)
+		return runETSession(args, token)
 	default:
-		return runSSHSession(args)
+		return runSSHSession(args, token)
 	}
 }
 
-func runSSHSession(args []string) (int, error) {
+func runSSHSession(args []string, token string) (int, error) {
 	forwards, rest, err := takeSSHForwards(args)
 	if err != nil {
 		return 0, err
@@ -65,5 +71,5 @@ func runSSHSession(args []string) (int, error) {
 	// cannot outlive slush, and the interactive client reuses it. An
 	// explicit master (not auto) keeps concurrent sessions from
 	// stealing each other's forwards.
-	return runTunneledSession(sshPath, host, rest, forwards, withSSHControlPath)
+	return runTunneledSession(sshPath, host, rest, forwards, token, withSSHControlPath)
 }

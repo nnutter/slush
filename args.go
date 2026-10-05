@@ -154,8 +154,8 @@ func isCombinedSSHFlag(arg string) bool {
 // withSSHControlPath ensures the ssh client reuses the ControlMaster
 // socket that holds the port forwards. Ours sorts first so a user
 // -o ControlPath cannot silently detach the client from the tunnel.
-func withSSHControlPath(args []string, controlPath string) []string {
-	return slices.Concat([]string{"-o", "ControlPath=" + controlPath}, args)
+func withSSHControlPath(args []string, params sessionParams) []string {
+	return slices.Concat([]string{"-o", "ControlPath=" + params.controlPath}, args)
 }
 
 // withReverseTunnel returns args with the Lemonade reverse tunnel injected
@@ -289,8 +289,8 @@ func sshHostFromETDestination(dest string) string {
 
 // withMoshSSHControlPath ensures mosh's bootstrap ssh reuses the ControlMaster
 // socket that holds the port forwards.
-func withMoshSSHControlPath(args []string, controlPath string) []string {
-	opt := "-o ControlPath=" + controlPath
+func withMoshSSHControlPath(args []string, params sessionParams) []string {
+	opt := "-o ControlPath=" + params.controlPath
 	out := slices.Clone(args)
 	for i, arg := range out {
 		if arg == "--ssh" && i+1 < len(out) {

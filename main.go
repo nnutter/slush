@@ -49,10 +49,21 @@ func runClient(mode clientMode, args []string) (int, error) {
 }
 
 func runSSHSession(args []string) (int, error) {
-	binPath, err := exec.LookPath("ssh")
+	forwards, rest, err := takeSSHForwards(args)
+	if err != nil {
+		return 0, err
+	}
+	host, err := sshHostOperand(rest)
+	if err != nil {
+		return 0, err
+	}
+	sshPath, err := exec.LookPath("ssh")
 	if err != nil {
 		return 0, fmt.Errorf("ssh not found on PATH: %w", err)
 	}
-	// -L/-R stay in args for ssh; only Lemonade is injected when missing.
-	return runSession(binPath, withReverseTunnel(args))
+	// Like --et/--mosh: forwards ride a held ControlMaster child that
+	// cannot outlive slush, and the interactive client reuses it. An
+	// explicit master (not auto) keeps concurrent sessions from
+	// stealing each other's forwards.
+	return runTunneledSession(sshPath, host, rest, forwards, withSSHControlPath)
 }

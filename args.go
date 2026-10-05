@@ -93,6 +93,71 @@ func splitCombinedForward(arg string) (flag, spec string, ok bool) {
 	return "", "", false
 }
 
+// sshHostOperand returns the [user@]host operand from ssh-style args,
+// skipping flags (and their arguments) as well as -L/-R forwards.
+func sshHostOperand(args []string) (string, error) {
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--" {
+			if i+1 >= len(args) {
+				return "", fmt.Errorf("missing ssh destination host")
+			}
+			return args[i+1], nil
+		}
+		if !strings.HasPrefix(arg, "-") || arg == "-" {
+			if arg == "-" {
+				continue
+			}
+			return arg, nil
+		}
+		if flag, _, ok := splitCombinedForward(arg); ok && (flag == "-L" || flag == "-R") {
+			continue
+		}
+		if arg == "-L" || arg == "-R" {
+			i++
+			continue
+		}
+		if isCombinedSSHFlag(arg) {
+			continue
+		}
+		if sshFlagTakesArg(arg) {
+			i++
+			continue
+		}
+		// Anything else starting with '-' is a flag or a bundle of
+		// single-letter flags; none of them is the host operand.
+	}
+	return "", fmt.Errorf("missing ssh destination host")
+}
+
+// sshFlagTakesArg reports whether an ssh flag consumes the next argument.
+// It matches whole flags only; see isCombinedSSHFlag for -Xvalue forms.
+func sshFlagTakesArg(flag string) bool {
+	switch flag {
+	case "-b", "-c", "-D", "-E", "-F", "-I", "-J", "-L", "-R",
+		"-S", "-W", "-Q", "-l", "-i", "-m", "-o", "-p",
+		"-G", "-w":
+		return true
+	default:
+		return false
+	}
+}
+
+// isCombinedSSHFlag reports whether arg is a combined short option
+// (-p2222, -luser) that carries its value inline and consumes no
+// further argument.
+func isCombinedSSHFlag(arg string) bool {
+	return len(arg) > 2 && arg[0] == '-' && arg[1] != '-' &&
+		sshFlagTakesArg(arg[:2])
+}
+
+// withSSHControlPath ensures the ssh client reuses the ControlMaster
+// socket that holds the port forwards. Ours sorts first so a user
+// -o ControlPath cannot silently detach the client from the tunnel.
+func withSSHControlPath(args []string, controlPath string) []string {
+	return slices.Concat([]string{"-o", "ControlPath=" + controlPath}, args)
+}
+
 // withReverseTunnel returns args with the Lemonade reverse tunnel injected
 // unless an identical -R tunnel is already present.
 func withReverseTunnel(args []string) []string {

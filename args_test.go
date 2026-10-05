@@ -186,6 +186,98 @@ func TestTakeSSHForwards(t *testing.T) {
 	}
 }
 
+func TestSSHHostOperand(t *testing.T) {
+	tests := []struct {
+		name    string
+		in      []string
+		want    string
+		wantErr string
+	}{
+		{
+			name: "bare host",
+			in:   []string{"user@host"},
+			want: "user@host",
+		},
+		{
+			name: "host with remote command",
+			in:   []string{"user@host", "tmux", "a"},
+			want: "user@host",
+		},
+		{
+			name: "port and key flags",
+			in:   []string{"-p", "2222", "-i", "~/.ssh/id", "user@host"},
+			want: "user@host",
+		},
+		{
+			name: "combined short port",
+			in:   []string{"-p2222", "user@host"},
+			want: "user@host",
+		},
+		{
+			name: "login name flags",
+			in:   []string{"-l", "user", "host"},
+			want: "host",
+		},
+		{
+			name: "combined login name",
+			in:   []string{"-luser", "host"},
+			want: "host",
+		},
+		{
+			name: "ssh option",
+			in:   []string{"-o", "StrictHostKeyChecking=no", "user@host"},
+			want: "user@host",
+		},
+		{
+			name: "forwards skipped",
+			in:   []string{"-L", "8080:127.0.0.1:8080", "-R9000:127.0.0.1:9000", "user@host"},
+			want: "user@host",
+		},
+		{
+			name: "jump host",
+			in:   []string{"-J", "jump", "user@host"},
+			want: "user@host",
+		},
+		{
+			name: "flag bundles",
+			in:   []string{"-vv", "-At", "user@host"},
+			want: "user@host",
+		},
+		{
+			name: "after --",
+			in:   []string{"--", "user@host"},
+			want: "user@host",
+		},
+		{
+			name:    "missing",
+			in:      []string{"-p", "2222"},
+			wantErr: "missing ssh destination host",
+		},
+		{
+			name:    "empty",
+			in:      nil,
+			wantErr: "missing ssh destination host",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := sshHostOperand(tt.in)
+			if tt.wantErr != "" {
+				require.EqualError(t, err, tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestWithSSHControlPath(t *testing.T) {
+	got := withSSHControlPath([]string{"user@host"}, "/tmp/c")
+	assert.Equal(t, []string{"-o", "ControlPath=/tmp/c", "user@host"}, got)
+}
+
 func TestWithReverseTunnel(t *testing.T) {
 	tests := []struct {
 		name string

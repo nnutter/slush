@@ -88,7 +88,7 @@ func runTunneledSession(
 	if prepareArgs != nil {
 		clientArgs = prepareArgs(clientArgs, controlPath)
 	}
-	return runSession(clientPath, clientArgs)
+	return runSession(clientPath, clientArgs, clientPath == sshPath)
 }
 
 // startSSHTunnel opens an ssh master child with Lemonade and any extra -L/-R

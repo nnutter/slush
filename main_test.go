@@ -35,7 +35,7 @@ func TestRunEndToEndWithFakeBinaries(t *testing.T) {
 	useEphemeralLemonadePort(t)
 
 	binDir := t.TempDir()
-	writeFakeSSH(t, binDir)
+	writeFakeSSHSession(t, binDir, fakeSSHSession{})
 	writeFakeLemonade(t, binDir)
 	t.Setenv("PATH", binDir)
 
@@ -54,7 +54,7 @@ func TestRunEndToEndSSHWithLocalForward(t *testing.T) {
 	useEphemeralLemonadePort(t)
 
 	binDir := t.TempDir()
-	writeFakeSSHExpecting(t, binDir, "-R", sshReverseTunnel, "-L", "8080:127.0.0.1:8080")
+	writeFakeSSHSession(t, binDir, fakeSSHSession{masterForwards: []string{"-L", "8080:127.0.0.1:8080"}})
 	writeFakeLemonade(t, binDir)
 	t.Setenv("PATH", binDir)
 
@@ -113,7 +113,7 @@ func TestRunPropagatesSSHExitCode(t *testing.T) {
 	useEphemeralLemonadePort(t)
 
 	binDir := t.TempDir()
-	writeFakeSSHExit(t, binDir, 42)
+	writeFakeSSHSession(t, binDir, fakeSSHSession{clientExit: 42})
 	writeFakeLemonade(t, binDir)
 	t.Setenv("PATH", binDir)
 
@@ -274,45 +274,131 @@ func TestStartLemonadeDoesNotPoisonConnCh(t *testing.T) {
 	}
 }
 
-func writeFakeSSH(t *testing.T, dir string) {
-	t.Helper()
-	writeFakeSSHExpecting(t, dir, "-R", sshReverseTunnel)
+// fakeSSHSession configures the combined ssh fake: one script serves
+// the -N master (holds forwards, answers -O check/exit) and the
+// interactive client (reuses the master, carries no -R of its own).
+type fakeSSHSession struct {
+	// extra forwards required on the master, as flag/spec pairs.
+	masterForwards []string
+	// exit code for the client invocation.
+	clientExit int
 }
 
-func writeFakeSSHExpecting(t *testing.T, dir string, required ...string) {
+func writeFakeSSHSession(t *testing.T, dir string, cfg fakeSSHSession) {
 	t.Helper()
-	if len(required)%2 != 0 {
-		t.Fatalf("required forwards must be flag/spec pairs, got %v", required)
+	if len(cfg.masterForwards)%2 != 0 {
+		t.Fatalf("master forwards must be flag/spec pairs, got %v", cfg.masterForwards)
 	}
 
-	var checks strings.Builder
-	for i := 0; i < len(required); i += 2 {
-		flag := required[i]
-		spec := required[i+1]
-		checks.WriteString(`
-flag='` + flag + `'
-spec='` + spec + `'
-saw=
+	var extraChecks strings.Builder
+	for i := 0; i < len(cfg.masterForwards); i += 2 {
+		flag := cfg.masterForwards[i]
+		spec := cfg.masterForwards[i+1]
+		extraChecks.WriteString(`
+saw_extra=
 prev=
 for arg in "$@"; do
-  if [ "$prev" = "$flag" ] && [ "$arg" = "$spec" ]; then
-    saw=1
+  if [ "$prev" = "` + flag + `" ] && [ "$arg" = "` + spec + `" ]; then
+    saw_extra=1
     break
   fi
   prev=
   case "$arg" in
-    "$flag") prev="$flag" ;;
-    ${flag}${spec}) saw=1; break ;;
+    "` + flag + `") prev="` + flag + `" ;;
+    ` + flag + spec + `) saw_extra=1; break ;;
   esac
 done
-if [ -z "$saw" ]; then
-  echo "missing $flag $spec: $*" >&2
+if [ -z "$saw_extra" ]; then
+  echo "missing master forward ` + flag + ` ` + spec + `: $*" >&2
   exit 1
 fi
 `)
 	}
 
-	script := "#!/bin/sh\n" + checks.String() + "exit 0\n"
+	script := `#!/bin/sh
+controlpath=
+prev=
+op=
+for arg in "$@"; do
+  if [ "$prev" = "-o" ]; then
+    case "$arg" in
+      ControlPath=*) controlpath=${arg#ControlPath=} ;;
+    esac
+    prev=
+    continue
+  fi
+  case "$arg" in
+    -o) prev=-o; continue ;;
+    -N) is_master=1 ;;
+    -O) op=1; continue ;;
+  esac
+  if [ -n "$op" ]; then
+    if [ "$arg" = "check" ]; then
+      if [ -n "$controlpath" ] && [ -e "$controlpath" ]; then
+        exit 0
+      fi
+      exit 1
+    fi
+    if [ "$arg" = "exit" ]; then
+      exit 0
+    fi
+    echo "unsupported control command: $arg" >&2
+    exit 1
+  fi
+done
+
+if [ -z "$is_master" ]; then
+  # Interactive client: must reuse the master and carry no -R itself.
+  saw_control=
+  saw_host=
+  for arg in "$@"; do
+    case "$arg" in
+      -R|-R*) echo "client must not carry -R: $*" >&2; exit 1 ;;
+      -o) prev_o=1; continue ;;
+    esac
+    if [ -n "$prev_o" ]; then
+      case "$arg" in
+        ControlPath=*) saw_control=1 ;;
+      esac
+      prev_o=
+      continue
+    fi
+    if [ "$arg" = "user@host" ]; then
+      saw_host=1
+    fi
+  done
+  if [ -z "$saw_control" ] || [ -z "$saw_host" ]; then
+    echo "unexpected client args: $*" >&2
+    exit 1
+  fi
+  exit ` + strconv.Itoa(cfg.clientExit) + `
+fi
+
+saw_tunnel=
+prev=
+for arg in "$@"; do
+  if [ "$prev" = "-R" ]; then
+    if [ "$arg" = "2489:127.0.0.1:2489" ]; then
+      saw_tunnel=1
+    fi
+    prev=
+    continue
+  fi
+  case "$arg" in
+    -R) prev=-R ;;
+  esac
+done
+
+if [ -z "$saw_tunnel" ] || [ -z "$controlpath" ]; then
+  echo "unexpected master args: $*" >&2
+  exit 1
+fi
+` + extraChecks.String() + `
+: > "$controlpath"
+while true; do
+  sleep 60
+done
+`
 	path := filepath.Join(dir, "ssh")
 	require.NoError(t, os.WriteFile(path, []byte(script), 0o755))
 }
@@ -468,13 +554,6 @@ echo "unexpected et args: $*" >&2
 exit 1
 `
 	path := filepath.Join(dir, "et")
-	require.NoError(t, os.WriteFile(path, []byte(script), 0o755))
-}
-
-func writeFakeSSHExit(t *testing.T, dir string, code int) {
-	t.Helper()
-	script := "#!/bin/sh\nexit " + strconv.Itoa(code) + "\n"
-	path := filepath.Join(dir, "ssh")
 	require.NoError(t, os.WriteFile(path, []byte(script), 0o755))
 }
 

@@ -93,8 +93,11 @@ func splitCombinedForward(arg string) (flag, spec string, ok bool) {
 	return "", "", false
 }
 
-// remoteShimDirExpr is the shell expression for the provisioned shim
-// directory. It must match shim.py's shim_dir plus "/bin".
+// remoteSlushDirExpr is the shell expression for the provisioned
+// slush directory. It must match shim.py's shim_dir.
+const remoteSlushDirExpr = `${XDG_CACHE_HOME:-$HOME/.cache}/slush`
+
+// remoteShimDirExpr is the provisioned shim directory expression.
 const remoteShimDirExpr = `"${XDG_CACHE_HOME:-$HOME/.cache}/slush/bin"`
 
 // remoteEnvPrefix returns a POSIX shell prefix exporting the slush

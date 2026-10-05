@@ -13,6 +13,19 @@ func main() {
 }
 
 func run(args []string) int {
+	mode, args, err := takeModeFlags(args)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "slush: %v\n", err)
+		return 1
+	}
+
+	// `slush validate` (and `slush --mosh validate ...`) runs probes
+	// instead of a session. A host literally named validate still
+	// works via `slush -- validate`.
+	if len(args) > 0 && args[0] == "validate" {
+		return runValidate(mode, args[1:])
+	}
+
 	if err := ensureLemonadePortFree(); err != nil {
 		fmt.Fprintf(os.Stderr, "slush: %v\n", err)
 		return 1
@@ -24,12 +37,6 @@ func run(args []string) int {
 		return 1
 	}
 	defer server.Stop()
-
-	mode, args, err := takeModeFlags(args)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "slush: %v\n", err)
-		return 1
-	}
 
 	token, err := generateClipboardToken()
 	if err != nil {

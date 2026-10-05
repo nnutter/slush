@@ -86,29 +86,43 @@ func runTunneledSession(
 	if err != nil {
 		return 0, fmt.Errorf("ssh not found on PATH: %w", err)
 	}
+	teardown, controlPath, err := establishSession(sshPath, sshHost, forwards, token)
+	if err != nil {
+		return 0, err
+	}
+	defer teardown()
 
+	if prepareArgs != nil {
+		clientArgs = prepareArgs(clientArgs, sessionParams{controlPath: controlPath, token: token})
+	}
+	return runSession(clientPath, clientArgs, clientPath == sshPath)
+}
+
+// establishSession starts the tunnel master and provisions the remote
+// shims, returning teardown and the master's control path. Callers
+// run the interactive client (sessions) or probes (validate) over it.
+func establishSession(sshPath, sshHost string, forwards []string, token string) (func(), string, error) {
 	dir, err := os.MkdirTemp("", "slush-ssh-")
 	if err != nil {
-		return 0, fmt.Errorf("create temp dir: %w", err)
+		return nil, "", fmt.Errorf("create temp dir: %w", err)
 	}
-	defer os.RemoveAll(dir)
 	controlPath := filepath.Join(dir, "control")
 
 	tunnel, err := startSSHTunnel(sshPath, sshHost, controlPath, forwards)
 	if err != nil {
-		return 0, err
+		os.RemoveAll(dir)
+		return nil, "", err
 	}
-	defer tunnel.Stop()
+	teardown := func() {
+		tunnel.Stop()
+		os.RemoveAll(dir)
+	}
 
 	params := sessionParams{controlPath: controlPath, token: token}
 	if err := provisionRemote(sshPath, sshHost, params); err != nil {
 		fmt.Fprintf(os.Stderr, "slush: clipboard provisioning: %v (continuing without clipboard forwarding)\n", err)
 	}
-
-	if prepareArgs != nil {
-		clientArgs = prepareArgs(clientArgs, params)
-	}
-	return runSession(clientPath, clientArgs, clientPath == sshPath)
+	return teardown, controlPath, nil
 }
 
 // startSSHTunnel opens an ssh master child with Lemonade and any extra -L/-R

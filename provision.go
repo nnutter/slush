@@ -12,7 +12,6 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
-	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -61,7 +60,7 @@ func provisionRemote(sshPath, host string, params sessionParams) error {
 // writeSessionEnv refreshes the per-session env file and reports the
 // installed shim version plus whether python3 is missing remotely.
 func writeSessionEnv(sshPath, host string, params sessionParams) (string, bool, error) {
-	script := fmt.Sprintf("umask 077\n"+`dir="${XDG_CACHE_HOME:-$HOME/.cache}/slush"`+"\n"+`mkdir -p "$dir/bin" || exit 1`+"\n"+
+	script := fmt.Sprintf("umask 077\n"+`dir="`+remoteSlushDirExpr+`"`+"\n"+`mkdir -p "$dir/bin" || exit 1`+"\n"+
 		`: >> "$dir/slush-env" || exit 1`+"\n"+`chmod 600 "$dir/slush-env" || exit 1`+"\n"+
 		`printf 'SLUSH_TOKEN=%%s\nSLUSH_PORT=%%d\n' %s %d > "$dir/slush-env" || exit 1`+"\n"+`if ! command -v python3 >/dev/null 2>&1; then echo NO_PYTHON3; fi`+"\n"+`cat "$dir/VERSION" 2>/dev/null || echo MISSING`+"\n",
 		shellQuote(params.token), clipboardPort)
@@ -95,7 +94,7 @@ func installShims(sshPath, host string, params sessionParams) error {
 		contents := strings.ReplaceAll(zshStartup, "__STARTUP_FILE__", name)
 		startupFiles = append(startupFiles, fmt.Sprintf(`printf '%%s' %s > "$dir/zsh/%s" || exit 1`, shellQuote(contents), name))
 	}
-	script := `dir="${XDG_CACHE_HOME:-$HOME/.cache}/slush"` + "\n" +
+	script := `dir="` + remoteSlushDirExpr + `"` + "\n" +
 		`mkdir -p "$dir/bin" || exit 1` + "\n" +
 		`cat > "$dir/bin/slush-shim" || exit 1` + "\n" +
 		`chmod +x "$dir/bin/slush-shim" || exit 1` + "\n" +
@@ -143,10 +142,9 @@ func sshExec(sshPath, host, script string, stdin *strings.Reader, extra []string
 	if stdin != nil {
 		cmd.Stdin = stdin
 	}
-	cmd.Stderr = os.Stderr
-	out, err := cmd.Output()
+	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("ssh %s: %w", host, err)
+		return "", fmt.Errorf("ssh %s: %w: %s", host, err, strings.TrimSpace(string(out)))
 	}
 	return string(out), nil
 }

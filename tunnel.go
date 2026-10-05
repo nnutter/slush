@@ -35,11 +35,15 @@ func runMoshSession(args []string, token string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	clientArgs, err := withRemoteEnvMosh(args, token)
+	if err != nil {
+		return 0, err
+	}
 	moshPath, err := exec.LookPath("mosh")
 	if err != nil {
 		return 0, fmt.Errorf("mosh not found on PATH: %w", err)
 	}
-	return runTunneledSession(moshPath, host, args, forwards, token, withMoshSSHControlPath)
+	return runTunneledSession(moshPath, host, clientArgs, forwards, token, withMoshSSHControlPath)
 }
 
 // runETSession keeps an ssh tunnel up for Lemonade and any -L/-R forwards, and

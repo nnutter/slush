@@ -93,22 +93,77 @@ func splitCombinedForward(arg string) (flag, spec string, ok bool) {
 	return "", "", false
 }
 
+// remoteShimDirExpr is the shell expression for the provisioned shim
+// directory. It must match shim.py's shim_dir plus "/bin".
+const remoteShimDirExpr = `"${XDG_CACHE_HOME:-$HOME/.cache}/slush/bin"`
+
+// remoteEnvPrefix returns a POSIX shell prefix exporting the slush
+// session environment: clipboard token, shim PATH shadow, and BROWSER
+// so gh/git/xdg-open callers reach slush-open. It carries no user
+// data (the token is hex), so callers can safely prepend it to remote
+// commands. The trailing "; " separates it from the command.
+func remoteEnvPrefix(token string) string {
+	return fmt.Sprintf("export SLUSH=1 SLUSH_TOKEN=%s BROWSER=slush-open PATH=%s:$PATH; ",
+		token, remoteShimDirExpr)
+}
+
 // sshHostOperand returns the [user@]host operand from ssh-style args,
 // skipping flags (and their arguments) as well as -L/-R forwards.
 func sshHostOperand(args []string) (string, error) {
+	idx, err := sshHostIndex(args)
+	if err != nil {
+		return "", err
+	}
+	return args[idx], nil
+}
+
+// splitSSHRemoteCommand splits ssh-style args into the head (options
+// through the host operand) and the remote command following it.
+func splitSSHRemoteCommand(args []string) (head, cmd []string, err error) {
+	idx, err := sshHostIndex(args)
+	if err != nil {
+		return nil, nil, err
+	}
+	return slices.Clone(args[:idx+1]), slices.Clone(args[idx+1:]), nil
+}
+
+// Bash login profiles (notably macOS path_helper) can put native tools
+// ahead of the injected PATH. Restore the session environment after those
+// profiles run. Zsh uses startup wrappers via ZDOTDIR for the same reason;
+// other shells retain their usual login startup.
+const interactiveShellCommand = `case "${SHELL:-/bin/sh}" in */bash) exec "$SHELL" --rcfile "${XDG_CACHE_HOME:-$HOME/.cache}/slush/bashrc" -i ;; */zsh) export SLUSH_ZDOTDIR="${ZDOTDIR-}" ZDOTDIR="${XDG_CACHE_HOME:-$HOME/.cache}/slush/zsh"; exec "$SHELL" -l ;; *) exec "${SHELL:-/bin/sh}" -l ;; esac`
+
+// withRemoteEnvSSH wraps the remote command (or a fresh login shell
+// when the user gave none) with the slush session environment.
+// It reports whether the session is interactive (no user command).
+func withRemoteEnvSSH(rest []string, token string) ([]string, bool, error) {
+	head, cmd, err := splitSSHRemoteCommand(rest)
+	if err != nil {
+		return nil, false, err
+	}
+	tail := strings.Join(cmd, " ")
+	interactive := len(cmd) == 0
+	if interactive {
+		tail = interactiveShellCommand
+	}
+	return append(head, remoteEnvPrefix(token)+tail), interactive, nil
+}
+
+// sshHostIndex returns the position of the [user@]host operand.
+func sshHostIndex(args []string) (int, error) {
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		if arg == "--" {
 			if i+1 >= len(args) {
-				return "", fmt.Errorf("missing ssh destination host")
+				return 0, fmt.Errorf("missing ssh destination host")
 			}
-			return args[i+1], nil
+			return i + 1, nil
 		}
 		if !strings.HasPrefix(arg, "-") || arg == "-" {
 			if arg == "-" {
 				continue
 			}
-			return arg, nil
+			return i, nil
 		}
 		if flag, _, ok := splitCombinedForward(arg); ok && (flag == "-L" || flag == "-R") {
 			continue
@@ -127,7 +182,7 @@ func sshHostOperand(args []string) (string, error) {
 		// Anything else starting with '-' is a flag or a bundle of
 		// single-letter flags; none of them is the host operand.
 	}
-	return "", fmt.Errorf("missing ssh destination host")
+	return 0, fmt.Errorf("missing ssh destination host")
 }
 
 // sshFlagTakesArg reports whether an ssh flag consumes the next argument.
@@ -191,7 +246,46 @@ func isCombinedShortTunnel(arg, flag, tunnel string) bool {
 
 // moshDestination returns the [user@]host operand from mosh-style args.
 func moshDestination(args []string) (string, error) {
-	return destinationHost(args, "mosh", moshFlagTakesArg, isMoshCombinedShortOpt)
+	host, _, err := destinationHostAt(args, "mosh", moshFlagTakesArg, isMoshCombinedShortOpt)
+	return host, err
+}
+
+// splitMoshCommand splits mosh-style args into the leading options,
+// the host, and the remote command. The options never contain the
+// "--" separator: at most one is kept, normalized to exactly one in
+// withRemoteEnvMosh.
+func splitMoshCommand(args []string) (pre []string, host string, cmd []string, err error) {
+	host, idx, err := destinationHostAt(args, "mosh", moshFlagTakesArg, isMoshCombinedShortOpt)
+	if err != nil {
+		return nil, "", nil, err
+	}
+	pre = slices.Clone(args[:idx])
+	if len(pre) > 0 && pre[len(pre)-1] == "--" {
+		pre = pre[:len(pre)-1]
+	}
+	return pre, host, slices.Clone(args[idx+1:]), nil
+}
+
+// withRemoteEnvMosh rebuilds mosh args with the session environment.
+// mosh-server execs its command directly (no shell), so the wrapper
+// is explicit argv: sh -c 'export ...; exec ...'. Exactly one "--"
+// separates options from the host: mosh's option parser abbreviates
+// -c to --client, so an unprotected `sh -c` would misparse.
+func withRemoteEnvMosh(args []string, token string) ([]string, error) {
+	pre, host, cmd, err := splitMoshCommand(args)
+	if err != nil {
+		return nil, err
+	}
+	script := remoteEnvPrefix(token)
+	tail := []string{}
+	if len(cmd) == 0 {
+		script += interactiveShellCommand
+	} else {
+		script += `exec "$@"`
+		tail = append([]string{"sh"}, cmd...)
+	}
+	out := append(pre, "--", host, "sh", "-c", script)
+	return append(out, tail...), nil
 }
 
 // etDestination returns the [user@]host[:port] operand from et-style args.
@@ -205,16 +299,28 @@ func destinationHost(
 	flagTakesArg func(string) bool,
 	isCombinedShort func(string) bool,
 ) (string, error) {
+	host, _, err := destinationHostAt(args, client, flagTakesArg, isCombinedShort)
+	return host, err
+}
+
+// destinationHostAt is destinationHost that also reports the host's
+// position so callers can split options from the remote command.
+func destinationHostAt(
+	args []string,
+	client string,
+	flagTakesArg func(string) bool,
+	isCombinedShort func(string) bool,
+) (string, int, error) {
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		if arg == "--" {
 			if i+1 >= len(args) {
-				return "", fmt.Errorf("missing %s destination host", client)
+				return "", 0, fmt.Errorf("missing %s destination host", client)
 			}
-			return args[i+1], nil
+			return args[i+1], i + 1, nil
 		}
 		if !strings.HasPrefix(arg, "-") {
-			return arg, nil
+			return arg, i, nil
 		}
 		if strings.HasPrefix(arg, "--") && strings.Contains(arg, "=") {
 			continue
@@ -227,7 +333,7 @@ func destinationHost(
 			continue
 		}
 	}
-	return "", fmt.Errorf("missing %s destination host", client)
+	return "", 0, fmt.Errorf("missing %s destination host", client)
 }
 
 func moshFlagTakesArg(flag string) bool {

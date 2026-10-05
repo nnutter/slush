@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -271,6 +272,133 @@ func TestSSHHostOperand(t *testing.T) {
 			assert.Equal(t, tt.want, got)
 		})
 	}
+}
+
+func TestRemoteEnvPrefix(t *testing.T) {
+	prefix := remoteEnvPrefix("tok123")
+	assert.Contains(t, prefix, "SLUSH=1")
+	assert.Contains(t, prefix, "SLUSH_TOKEN=tok123")
+	assert.Contains(t, prefix, "BROWSER=slush-open")
+	assert.Contains(t, prefix, "PATH=")
+	assert.Contains(t, prefix, "/slush/bin")
+	assert.True(t, strings.HasSuffix(prefix, "; "))
+}
+
+func TestWithRemoteEnvSSH(t *testing.T) {
+	tests := []struct {
+		name         string
+		in           []string
+		wantContains []string
+		wantHead     []string
+		interactive  bool
+		wantErr      string
+	}{
+		{
+			name:         "interactive wraps login shell",
+			in:           []string{"user@host"},
+			wantHead:     []string{"user@host"},
+			wantContains: []string{`exec "${SHELL:-/bin/sh}" -l`, "SLUSH=1"},
+			interactive:  true,
+		},
+		{
+			name:         "command is joined like ssh does",
+			in:           []string{"user@host", "tmux", "new", "-s", "x"},
+			wantHead:     []string{"user@host"},
+			wantContains: []string{"tmux new -s x"},
+			interactive:  false,
+		},
+		{
+			name:         "options stay ahead of host",
+			in:           []string{"-p", "2222", "user@host", "true"},
+			wantHead:     []string{"-p", "2222", "user@host"},
+			wantContains: []string{"true"},
+			interactive:  false,
+		},
+		{
+			name:    "missing host",
+			in:      []string{"-p", "2222"},
+			wantErr: "missing ssh destination host",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, interactive, err := withRemoteEnvSSH(tt.in, "tok123")
+			if tt.wantErr != "" {
+				require.EqualError(t, err, tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.interactive, interactive)
+			assert.Equal(t, tt.wantHead, got[:len(tt.wantHead)])
+			joined := strings.Join(got, " ")
+			for _, want := range tt.wantContains {
+				assert.Contains(t, joined, want)
+			}
+		})
+	}
+}
+
+func TestWithRemoteEnvMosh(t *testing.T) {
+	tests := []struct {
+		name    string
+		in      []string
+		want    []string
+		wantErr string
+	}{
+		{
+			name: "interactive inserts separator and wrapper",
+			in:   []string{"user@host"},
+			want: []string{"--", "user@host", "sh", "-c"},
+		},
+		{
+			name: "existing separator is normalized",
+			in:   []string{"--", "user@host"},
+			want: []string{"--", "user@host", "sh", "-c"},
+		},
+		{
+			name: "mosh options stay ahead",
+			in:   []string{"-p", "60001", "--ssh=ssh -p 2222", "user@host"},
+			want: []string{"-p", "60001", "--ssh=ssh -p 2222", "--", "user@host", "sh", "-c"},
+		},
+		{
+			name: "command becomes exec argv",
+			in:   []string{"user@host", "tmux", "a"},
+			want: []string{"--", "user@host", "sh", "-c"},
+		},
+		{
+			name:    "missing host",
+			in:      []string{"-p", "60001"},
+			wantErr: "missing mosh destination host",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := withRemoteEnvMosh(tt.in, "tok123")
+			if tt.wantErr != "" {
+				require.EqualError(t, err, tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got[:len(tt.want)])
+			// The wrapper script always carries the session env.
+			assert.Contains(t, got[len(tt.want)], "SLUSH=1")
+			assert.Contains(t, got[len(tt.want)], "SLUSH_TOKEN=tok123")
+		})
+	}
+}
+
+func TestWithRemoteEnvMoshCommandTail(t *testing.T) {
+	got, err := withRemoteEnvMosh([]string{"user@host", "tmux", "a"}, "tok123")
+	require.NoError(t, err)
+	// ... sh -c '<prefix>exec "$@"' sh tmux a
+	assert.Equal(t, []string{"sh", "tmux", "a"}, got[len(got)-3:])
+	assert.Contains(t, got[len(got)-4], `exec "$@"`)
+
+	got, err = withRemoteEnvMosh([]string{"user@host"}, "tok123")
+	require.NoError(t, err)
+	assert.Contains(t, got[len(got)-1], `exec "${SHELL:-/bin/sh}" -l`)
 }
 
 func TestWithSSHControlPath(t *testing.T) {

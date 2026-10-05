@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+
+	"golang.org/x/term"
 )
 
 func main() {
@@ -63,13 +65,27 @@ func runSSHSession(args []string, token string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	clientArgs, interactive, err := withRemoteEnvSSH(rest, token)
+	if err != nil {
+		return 0, err
+	}
 	sshPath, err := exec.LookPath("ssh")
 	if err != nil {
 		return 0, fmt.Errorf("ssh not found on PATH: %w", err)
+	}
+	if interactive && stdinIsTerminal() {
+		// A wrapped command is always present now, so ssh would
+		// skip PTY allocation on its own; restore it for shells.
+		clientArgs = append([]string{"-t"}, clientArgs...)
 	}
 	// Like --et/--mosh: forwards ride a held ControlMaster child that
 	// cannot outlive slush, and the interactive client reuses it. An
 	// explicit master (not auto) keeps concurrent sessions from
 	// stealing each other's forwards.
-	return runTunneledSession(sshPath, host, rest, forwards, token, withSSHControlPath)
+	return runTunneledSession(sshPath, host, clientArgs, forwards, token, withSSHControlPath)
+}
+
+// stdinIsTerminal reports whether slush's stdin is a terminal.
+func stdinIsTerminal() bool {
+	return term.IsTerminal(int(os.Stdin.Fd()))
 }

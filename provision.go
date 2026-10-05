@@ -21,8 +21,14 @@ import (
 //go:embed shim.py
 var shimScript string
 
-// shimVersion bumps whenever shim.py changes so remotes reinstall.
-const shimVersion = "1"
+//go:embed bashrc
+var bashStartup string
+
+//go:embed zsh-startup
+var zshStartup string
+
+// shimVersion bumps whenever a provisioned file changes so remotes reinstall.
+const shimVersion = "3"
 
 // shimNames are installed as symlinks to the argv[0]-dispatched shim.
 var shimNames = []string{
@@ -84,11 +90,18 @@ func installShims(sshPath, host string, params sessionParams) error {
 	for _, name := range shimNames {
 		links = append(links, fmt.Sprintf(`ln -sf slush-shim "$dir/bin/%s" || exit 1`, name))
 	}
+	startupFiles := []string{`mkdir -p "$dir/zsh" || exit 1`}
+	for _, name := range []string{".zshenv", ".zprofile", ".zshrc", ".zlogin"} {
+		contents := strings.ReplaceAll(zshStartup, "__STARTUP_FILE__", name)
+		startupFiles = append(startupFiles, fmt.Sprintf(`printf '%%s' %s > "$dir/zsh/%s" || exit 1`, shellQuote(contents), name))
+	}
 	script := `dir="${XDG_CACHE_HOME:-$HOME/.cache}/slush"` + "\n" +
 		`mkdir -p "$dir/bin" || exit 1` + "\n" +
 		`cat > "$dir/bin/slush-shim" || exit 1` + "\n" +
 		`chmod +x "$dir/bin/slush-shim" || exit 1` + "\n" +
 		strings.Join(links, "\n") + "\n" +
+		strings.Join(startupFiles, "\n") + "\n" +
+		fmt.Sprintf(`printf '%%s' %s > "$dir/bashrc" || exit 1`, shellQuote(bashStartup)) + "\n" +
 		fmt.Sprintf(`printf '%%s' %s > "$dir/VERSION" || exit 1`, shellQuote(shimVersion)) + "\n" +
 		`echo INSTALLED` + "\n"
 

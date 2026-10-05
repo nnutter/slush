@@ -46,6 +46,25 @@ func TestRunEndToEndWithFakeBinaries(t *testing.T) {
 	requirePortFree(t, lemonadePort)
 }
 
+func TestRunEndToEndSSHInteractive(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake binary helpers are shell scripts")
+	}
+
+	useEphemeralLemonadePort(t)
+
+	binDir := t.TempDir()
+	writeFakeSSHSession(t, binDir, fakeSSHSession{})
+	writeFakeLemonade(t, binDir)
+	t.Setenv("PATH", binDir)
+
+	require.NoError(t, ensureLemonadePortFree())
+
+	code := run([]string{"user@host"})
+	assert.Equal(t, 0, code)
+	requirePortFree(t, lemonadePort)
+}
+
 func TestRunEndToEndSSHWithLocalForward(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("fake binary helpers are shell scripts")
@@ -347,14 +366,39 @@ for arg in "$@"; do
   fi
 done
 
+prev=
+is_provision=
+for arg in "$@"; do
+  if [ "$prev" = "-o" ] && [ "$arg" = "BatchMode=yes" ]; then
+    is_provision=1
+    break
+  fi
+  prev=
+  if [ "$arg" = "-o" ]; then prev=-o; fi
+done
+if [ -n "$is_provision" ]; then
+  stdin=$(cat)
+  if [ -n "$stdin" ]; then
+    echo INSTALLED
+  else
+    echo MISSING
+  fi
+  exit 0
+fi
+
 if [ -z "$is_master" ]; then
-  # Interactive client: must reuse the master and carry no -R itself.
+  # Interactive client: must reuse the master, carry no -R itself,
+  # and wrap the remote command with the session environment.
   saw_control=
   saw_host=
+  saw_env=
   for arg in "$@"; do
     case "$arg" in
       -R|-R*) echo "client must not carry -R: $*" >&2; exit 1 ;;
       -o) prev_o=1; continue ;;
+    esac
+    case "$arg" in
+      *SLUSH=1*SLUSH_TOKEN=*) saw_env=1 ;;
     esac
     if [ -n "$prev_o" ]; then
       case "$arg" in
@@ -367,7 +411,7 @@ if [ -z "$is_master" ]; then
       saw_host=1
     fi
   done
-  if [ -z "$saw_control" ] || [ -z "$saw_host" ]; then
+  if [ -z "$saw_control" ] || [ -z "$saw_host" ] || [ -z "$saw_env" ]; then
     echo "unexpected client args: $*" >&2
     exit 1
   fi
@@ -465,6 +509,26 @@ for arg in "$@"; do
   fi
 done
 
+prev=
+is_provision=
+for arg in "$@"; do
+  if [ "$prev" = "-o" ] && [ "$arg" = "BatchMode=yes" ]; then
+    is_provision=1
+    break
+  fi
+  prev=
+  if [ "$arg" = "-o" ]; then prev=-o; fi
+done
+if [ -n "$is_provision" ]; then
+  stdin=$(cat)
+  if [ -n "$stdin" ]; then
+    echo INSTALLED
+  else
+    echo MISSING
+  fi
+  exit 0
+fi
+
 saw_n=
 saw_tunnel=
 prev=
@@ -510,6 +574,10 @@ func writeFakeMosh(t *testing.T, dir string) {
 	script := `#!/bin/sh
 saw_host=
 saw_control=
+saw_dashdash=
+saw_sh=
+saw_c=
+saw_env=
 for arg in "$@"; do
   case "$arg" in
     -L|-R|-L*|-R*)
@@ -517,14 +585,20 @@ for arg in "$@"; do
       exit 1
       ;;
     user@host) saw_host=1 ;;
+    --) saw_dashdash=1 ;;
+    sh) saw_sh=1 ;;
+    -c) saw_c=1 ;;
     --ssh=*)
       case "$arg" in
         *ControlPath=*) saw_control=1 ;;
       esac
       ;;
   esac
+  case "$arg" in
+    *SLUSH=1*SLUSH_TOKEN=*) saw_env=1 ;;
+  esac
 done
-if [ -n "$saw_host" ] && [ -n "$saw_control" ]; then
+if [ -n "$saw_host" ] && [ -n "$saw_control" ] && [ -n "$saw_dashdash" ] && [ -n "$saw_sh" ] && [ -n "$saw_c" ] && [ -n "$saw_env" ]; then
   exit 0
 fi
 echo "unexpected mosh args: $*" >&2

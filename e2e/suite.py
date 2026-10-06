@@ -19,13 +19,14 @@ import signal
 import socket
 import sys
 import struct
+import subprocess
 import termios
 import tempfile
 import threading
 import time
 
 SLUSH, CONFIG, HOST, MODE = sys.argv[1:]
-ROOT = Path(tempfile.mkdtemp(prefix="slush-e2e-"))
+ROOT = Path(tempfile.mkdtemp(prefix="slush-e2e-", dir="/tmp"))
 ENV = dict(os.environ, TERM="xterm", E2E_ROOT=str(ROOT))
 BIN = ROOT / "bin"
 BIN.mkdir()
@@ -246,6 +247,10 @@ try:
     assert (ROOT / "clipboard").read_bytes() == PAYLOAD
     # A reused installation still works in a fresh session with a new token.
     checked("import subprocess\nassert subprocess.check_output(['pbpaste']) == " + REMOTE_PAYLOAD)
+    # Force the upgrade path, then prove installed commands still work.
+    subprocess.run([SSH, '-F', CONFIG, HOST,
+                    'printf stale > "${XDG_CACHE_HOME:-$HOME/.cache}/slush/VERSION"'], check=True)
+    checked("import subprocess\nassert subprocess.check_output(['pbpaste']) == " + REMOTE_PAYLOAD)
     (ROOT / "fail").touch()
     checked("import subprocess\nfor args in [['pbcopy'], ['pbpaste'], ['slush-open', 'https://example.com/fail']]:\n    assert subprocess.run(args, input=b'x').returncode != 0, args")
     (ROOT / "fail").unlink()
@@ -295,7 +300,8 @@ print('FORWARD_PASS', flush=True)
         if not stopped[0] and b'SIGNAL_READY' in output:
             os.kill(pid, signal.SIGTERM)
             stopped[0] = True
-    session(python_command("import time\nprint('SIGNAL_READY', flush=True)\ntime.sleep(60)"), timeout=30, tick=stop_tick)
+    session(python_command("import time\nprint('SIGNAL_READY', flush=True)\ntime.sleep(60)"),
+            extra=('-R', '39093:127.0.0.1:9'), timeout=30, tick=stop_tick)
     assert stopped[0]
     with socket.socket() as conn:
         assert conn.connect_ex(('127.0.0.1', 2489)) != 0, 'orphan after SIGTERM'
@@ -303,6 +309,18 @@ print('FORWARD_PASS', flush=True)
     if MODE == "ssh":
         code, output = session("exit 37")
         assert code == 37, (code, output)
+        # Bypass the named host: CLI port/identity must reach the master too.
+        config = subprocess.check_output([SSH, '-G', '-F', CONFIG, HOST], text=True)
+        resolved = {}
+        for line in config.splitlines():
+            key, _, value = line.partition(' ')
+            resolved.setdefault(key, value)
+        code, output = terminal([SLUSH, '-p', resolved['port'], '-i', resolved['identityfile'],
+                                 '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=no',
+                                 '-o', 'UserKnownHostsFile=' + str(ROOT / 'known_hosts'),
+                                 resolved['user'] + '@' + resolved['hostname'],
+                                 "printf 'OPTIONS_%s\\n' PASS"], 90)
+        assert code == 0 and 'OPTIONS_PASS' in output, output
     # A no-command session must preserve forwarding through login startup.
     argv = [SLUSH, HOST] if MODE == 'ssh' else [SLUSH, '--mosh', '--', HOST]
     code, output = terminal(argv, 60, shell_input=(

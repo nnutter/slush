@@ -121,6 +121,17 @@ func sshHostOperand(args []string) (string, error) {
 	return args[idx], nil
 }
 
+// sshConnOpts returns the ssh connection options (everything before
+// the host operand) so the tunnel master honors non-default ports,
+// identities, and jumps.
+func sshConnOpts(rest []string) ([]string, error) {
+	head, _, err := splitSSHRemoteCommand(rest)
+	if err != nil {
+		return nil, err
+	}
+	return slices.Clone(head[:len(head)-1]), nil
+}
+
 // splitSSHRemoteCommand splits ssh-style args into the head (options
 // through the host operand) and the remote command following it.
 func splitSSHRemoteCommand(args []string) (head, cmd []string, err error) {

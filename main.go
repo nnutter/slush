@@ -72,6 +72,12 @@ func runSSHSession(args []string, token string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	// Connection options ride the tunnel master so non-default
+	// ports, identities, and jumps work; forwards travel separately.
+	connOpts, err := sshConnOpts(rest)
+	if err != nil {
+		return 0, err
+	}
 	clientArgs, interactive, err := withRemoteEnvSSH(rest, token)
 	if err != nil {
 		return 0, err
@@ -89,7 +95,7 @@ func runSSHSession(args []string, token string) (int, error) {
 	// cannot outlive slush, and the interactive client reuses it. An
 	// explicit master (not auto) keeps concurrent sessions from
 	// stealing each other's forwards.
-	return runTunneledSession(sshPath, host, clientArgs, forwards, token, withSSHControlPath)
+	return runTunneledSession(sshPath, host, connOpts, clientArgs, forwards, token, withSSHControlPath)
 }
 
 // stdinIsTerminal reports whether slush's stdin is a terminal.

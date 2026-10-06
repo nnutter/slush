@@ -401,6 +401,50 @@ func TestWithRemoteEnvMoshCommandTail(t *testing.T) {
 	assert.Contains(t, got[len(got)-1], `exec "${SHELL:-/bin/sh}" -l`)
 }
 
+func TestSSHConnOpts(t *testing.T) {
+	tests := []struct {
+		name    string
+		in      []string
+		want    []string
+		wantErr string
+	}{
+		{
+			name: "bare host has none",
+			in:   []string{"user@host"},
+			want: []string{},
+		},
+		{
+			name: "port and identity",
+			in:   []string{"-p", "2222", "-i", "key", "user@host", "true"},
+			want: []string{"-p", "2222", "-i", "key"},
+		},
+		{
+			// takeSSHForwards strips -L/-R before this runs; anything
+			// left over still rides the master verbatim.
+			name: "leftover flags ride along",
+			in:   []string{"-L", "8080:127.0.0.1:8080", "-p", "2222", "user@host"},
+			want: []string{"-L", "8080:127.0.0.1:8080", "-p", "2222"},
+		},
+		{
+			name:    "missing host",
+			in:      []string{"-p", "2222"},
+			wantErr: "missing ssh destination host",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := sshConnOpts(tt.in)
+			if tt.wantErr != "" {
+				require.EqualError(t, err, tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
 func TestWithSSHControlPath(t *testing.T) {
 	got := withSSHControlPath([]string{"user@host"}, sessionParams{controlPath: "/tmp/c"})
 	assert.Equal(t, []string{"-o", "ControlPath=/tmp/c", "user@host"}, got)

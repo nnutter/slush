@@ -58,7 +58,7 @@ func runValidate(mode clientMode, args []string) int {
 func runValidateChecks(mode clientMode, args []string, token string, out io.Writer) error {
 	v := &validator{out: out}
 
-	host, forwards, err := validateTarget(mode, args)
+	host, connOpts, forwards, err := validateTarget(mode, args)
 	if err != nil {
 		v.fail("target", err.Error())
 		return fmt.Errorf("1 check failed")
@@ -81,7 +81,7 @@ func runValidateChecks(mode clientMode, args []string, token string, out io.Writ
 		v.fail("tunnel", "ssh not found on PATH")
 		return fmt.Errorf("1 check failed")
 	}
-	teardown, controlPath, err := establishSession(sshPath, host, forwards, token)
+	teardown, controlPath, err := establishSession(sshPath, host, connOpts, forwards, token)
 	if err != nil {
 		v.fail("tunnel", err.Error())
 		return fmt.Errorf("1 check failed")
@@ -184,33 +184,38 @@ func probeEnvPrefix(token string) string {
 	return remoteEnvPrefix(token) + fmt.Sprintf("SLUSH_PORT=%d ", clipboardPort)
 }
 
-// validateTarget resolves the tunnel host and forwards for the
-// validate mode. Probes always run over the ssh tunnel, whatever the
-// session transport.
-func validateTarget(mode clientMode, args []string) (host string, forwards []string, err error) {
+// validateTarget resolves the tunnel host, connection options, and
+// forwards for the validate mode. Probes always run over the ssh
+// tunnel, whatever the session transport. Only ssh mode carries
+// connection options today; mosh/et tunnel limitations match sessions.
+func validateTarget(mode clientMode, args []string) (host string, connOpts, forwards []string, err error) {
 	forwards, rest, err := takeSSHForwards(args)
 	if err != nil {
-		return "", nil, err
+		return "", nil, nil, err
 	}
 	switch mode {
 	case modeMosh:
 		host, err := moshDestination(rest)
 		if err != nil {
-			return "", nil, err
+			return "", nil, nil, err
 		}
-		return host, forwards, nil
+		return host, nil, forwards, nil
 	case modeET:
 		host, err := etDestination(rest)
 		if err != nil {
-			return "", nil, err
+			return "", nil, nil, err
 		}
-		return sshHostFromETDestination(host), forwards, nil
+		return sshHostFromETDestination(host), nil, forwards, nil
 	default:
 		host, err := sshHostOperand(rest)
 		if err != nil {
-			return "", nil, err
+			return "", nil, nil, err
 		}
-		return host, forwards, nil
+		connOpts, err := sshConnOpts(rest)
+		if err != nil {
+			return "", nil, nil, err
+		}
+		return host, connOpts, forwards, nil
 	}
 }
 

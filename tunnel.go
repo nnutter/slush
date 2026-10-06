@@ -43,7 +43,7 @@ func runMoshSession(args []string, token string) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("mosh not found on PATH: %w", err)
 	}
-	return runTunneledSession(moshPath, host, clientArgs, forwards, token, withMoshSSHControlPath)
+	return runTunneledSession(moshPath, host, nil, clientArgs, forwards, token, withMoshSSHControlPath)
 }
 
 // runETSession keeps an ssh tunnel up for clipboard and any -L/-R forwards, and
@@ -61,7 +61,7 @@ func runETSession(args []string, token string) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("et not found on PATH: %w", err)
 	}
-	return runTunneledSession(etPath, sshHostFromETDestination(host), args, forwards, token, nil)
+	return runTunneledSession(etPath, sshHostFromETDestination(host), nil, args, forwards, token, nil)
 }
 
 // sessionParams carries per-session values into client arg preparation
@@ -78,7 +78,7 @@ type sessionParams struct {
 // where clipboard forwarding is enforced.
 func runTunneledSession(
 	clientPath, sshHost string,
-	clientArgs, forwards []string,
+	connOpts, clientArgs, forwards []string,
 	token string,
 	prepareArgs func([]string, sessionParams) []string,
 ) (int, error) {
@@ -86,7 +86,7 @@ func runTunneledSession(
 	if err != nil {
 		return 0, fmt.Errorf("ssh not found on PATH: %w", err)
 	}
-	teardown, controlPath, err := establishSession(sshPath, sshHost, forwards, token)
+	teardown, controlPath, err := establishSession(sshPath, sshHost, connOpts, forwards, token)
 	if err != nil {
 		return 0, err
 	}
@@ -101,14 +101,16 @@ func runTunneledSession(
 // establishSession starts the tunnel master and provisions the remote
 // shims, returning teardown and the master's control path. Callers
 // run the interactive client (sessions) or probes (validate) over it.
-func establishSession(sshPath, sshHost string, forwards []string, token string) (func(), string, error) {
+// connOpts are ssh connection options (port, identity, ...) for the
+// master; port forwards travel separately in forwards.
+func establishSession(sshPath, sshHost string, connOpts, forwards []string, token string) (func(), string, error) {
 	dir, err := os.MkdirTemp("", "slush-ssh-")
 	if err != nil {
 		return nil, "", fmt.Errorf("create temp dir: %w", err)
 	}
 	controlPath := filepath.Join(dir, "control")
 
-	tunnel, err := startSSHTunnel(sshPath, sshHost, controlPath, forwards)
+	tunnel, err := startSSHTunnel(sshPath, sshHost, controlPath, connOpts, forwards)
 	if err != nil {
 		os.RemoveAll(dir)
 		return nil, "", err
@@ -127,7 +129,7 @@ func establishSession(sshPath, sshHost string, forwards []string, token string) 
 
 // startSSHTunnel opens an ssh master child with clipboard and any extra -L/-R
 // forwards, waiting until the control socket exists (forwards and auth OK).
-func startSSHTunnel(sshPath, host, controlPath string, forwards []string) (*sshTunnel, error) {
+func startSSHTunnel(sshPath, host, controlPath string, connOpts, forwards []string) (*sshTunnel, error) {
 	args := []string{
 		"-N",
 		"-o", "ExitOnForwardFailure=yes",
@@ -135,6 +137,7 @@ func startSSHTunnel(sshPath, host, controlPath string, forwards []string) (*sshT
 		"-o", "ControlPath=" + controlPath,
 		"-o", "ControlPersist=no",
 	}
+	args = append(args, connOpts...)
 	args = append(args, forwards...)
 	args = append(args, host)
 	args = withReverseTunnel(args)

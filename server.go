@@ -27,6 +27,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/nnutter/slush/internal/desktop"
 )
 
 // portIsBound reports whether something is listening on ":"+port by
@@ -144,13 +146,13 @@ func (s *clipboardServer) handle(conn net.Conn) {
 			writeResponse(conn, "ERR "+err.Error())
 			return
 		}
-		if err := copyToClipboard(body); err != nil {
+		if err := desktop.Copy(body); err != nil {
 			writeResponse(conn, "ERR "+err.Error())
 			return
 		}
 		writeResponse(conn, "OK")
 	case "PASTE":
-		body, err := pasteFromClipboard()
+		body, err := desktop.Paste()
 		if err != nil {
 			writeResponse(conn, "ERR "+err.Error())
 			return
@@ -163,7 +165,7 @@ func (s *clipboardServer) handle(conn net.Conn) {
 			writeResponse(conn, "ERR "+err.Error())
 			return
 		}
-		if err := openOnClient(string(target)); err != nil {
+		if err := desktop.OpenURL(string(target)); err != nil {
 			writeResponse(conn, "ERR "+err.Error())
 			return
 		}

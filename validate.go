@@ -17,6 +17,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/nnutter/slush/internal/desktop"
 )
 
 // validator accumulates check results.
@@ -158,7 +160,7 @@ func runValidateChecks(mode clientMode, args []string, token string, out io.Writ
 	// Platform report.
 	remoteUname, _ := probe(`uname -sm`)
 	fmt.Fprintf(out, "info - client %s clipboard %s; remote %s\n",
-		runtime.GOOS, backendName(), strings.TrimSpace(remoteUname))
+		runtime.GOOS, desktop.ClipboardBackendName(), strings.TrimSpace(remoteUname))
 	v.ok("platform report")
 
 	if v.failed > 0 {
@@ -166,15 +168,6 @@ func runValidateChecks(mode clientMode, args []string, token string, out io.Writ
 	}
 	fmt.Fprintf(out, "validate: all %d checks passed\n", v.passed)
 	return nil
-}
-
-// backendName names the selected local clipboard backend for display.
-func backendName() string {
-	name, _, err := copyCommand()
-	if err != nil {
-		return "unavailable: " + err.Error()
-	}
-	return name
 }
 
 // probeEnvPrefix exports the session token, port, and shim PATH for

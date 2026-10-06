@@ -1,10 +1,10 @@
-// Native clipboard and open backends for the clipboard server.
+// Package desktop integrates with native clipboard and URL-open tools.
 //
 // Backends shell out to the platform's canonical tools so slush honors
 // the user's local configuration instead of reimplementing desktop
 // integration: pbcopy/pbpaste/open on macOS, wl-copy/wl-paste (with
 // xclip/xsel fallbacks) and xdg-open on Linux.
-package main
+package desktop
 
 import (
 	"bytes"
@@ -15,8 +15,8 @@ import (
 	"strings"
 )
 
-// copyToClipboard writes data to the local system clipboard.
-func copyToClipboard(data []byte) error {
+// Copy writes data to the local system clipboard.
+func Copy(data []byte) error {
 	name, args, err := copyCommand()
 	if err != nil {
 		return err
@@ -24,8 +24,8 @@ func copyToClipboard(data []byte) error {
 	return runWithStdin(name, args, data)
 }
 
-// pasteFromClipboard reads the local system clipboard.
-func pasteFromClipboard() ([]byte, error) {
+// Paste reads the local system clipboard.
+func Paste() ([]byte, error) {
 	name, args, err := pasteCommand()
 	if err != nil {
 		return nil, err
@@ -33,10 +33,10 @@ func pasteFromClipboard() ([]byte, error) {
 	return runOutput(name, args)
 }
 
-// openOnClient opens target with the local desktop handler. Only URLs
+// OpenURL opens target with the local desktop handler. Only URLs
 // are supported: remote file paths cannot be opened on the client
 // without file syncing, which slush deliberately does not do.
-func openOnClient(target string) error {
+func OpenURL(target string) error {
 	trimmed := strings.TrimSpace(target)
 	if trimmed == "" {
 		return fmt.Errorf("empty open target")
@@ -68,6 +68,15 @@ func hasURLScheme(target string) bool {
 		}
 	}
 	return true
+}
+
+// ClipboardBackendName names the selected clipboard backend for display.
+func ClipboardBackendName() string {
+	name, _, err := copyCommand()
+	if err != nil {
+		return "unavailable: " + err.Error()
+	}
+	return name
 }
 
 // copyCommand selects the native clipboard-write tool.

@@ -1,0 +1,210 @@
+# End-to-end validation against a simulated remote.
+#
+# Design: everything slush owns runs for real (tunnel, provisioning,
+# python shims, protocol server, wrapping). Only the edges are faked:
+# the remote is a throwaway sshd and the local clipboard/open tools
+# are stub scripts recording to files. No Wayland/X11/Desktop needed.
+#
+# Windows has no e2e job: no Linux-container networking there, and the
+# native clipboard backends need a desktop session. Unit tests plus
+# the cross-OS build matrix cover it.
+name: E2E
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e-ubuntu:
+    name: E2E (ubuntu, Docker sshd)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build slush
+        run: go build -o slush .
+
+      - name: Generate test key
+        run: ssh-keygen -q -t ed25519 -f e2e_key -N ""
+
+      - name: Start sshd container
+        run: |
+          docker run -d --name slush-sshd \
+            --publish 127.0.0.1:2222:22 \
+            --publish 127.0.0.1:60000-60010:60000-60010/udp \
+            ubuntu:24.04 sleep infinity
+          docker exec slush-sshd bash -c "apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq openssh-server python3 mosh"
+          docker exec slush-sshd bash -c "mkdir -p /root/.ssh /run/sshd && chmod 700 /root/.ssh"
+          docker cp e2e_key.pub slush-sshd:/root/.ssh/authorized_keys
+          docker exec slush-sshd bash -c "chown root:root /root/.ssh/authorized_keys && chmod 600 /root/.ssh/authorized_keys && /usr/sbin/sshd"
+
+      - name: Configure ssh client
+        run: |
+          mkdir -p ~/.ssh
+          cat >> ~/.ssh/config <<'EOF'
+          Host e2e
+            HostName 127.0.0.1
+            Port 2222
+            User root
+            IdentityFile ${{ github.workspace }}/e2e_key
+            StrictHostKeyChecking no
+            UserKnownHostsFile /dev/null
+            BatchMode yes
+          EOF
+          for i in $(seq 1 30); do
+            ssh -o ConnectTimeout=2 e2e true 2>/dev/null && break
+            sleep 2
+          done
+          ssh -o ConnectTimeout=5 e2e true
+
+      - name: Stub local clipboard backends
+        run: |
+          mkdir -p fakebin
+          cat > fakebin/wl-copy <<'EOF'
+          #!/bin/sh
+          cat > "$E2E_CLIP_FILE"
+          EOF
+          cat > fakebin/wl-paste <<'EOF'
+          #!/bin/sh
+          cat "$E2E_CLIP_FILE"
+          EOF
+          cat > fakebin/xdg-open <<'EOF'
+          #!/bin/sh
+          printf '%s\n' "$@" >> "$E2E_OPEN_LOG"
+          EOF
+          chmod +x fakebin/*
+          echo "${{ github.workspace }}/fakebin" >> "$GITHUB_PATH"
+          echo "WAYLAND_DISPLAY=test" >> "$GITHUB_ENV"
+          echo "E2E_CLIP_FILE=${{ github.workspace }}/clipboard" >> "$GITHUB_ENV"
+          echo "E2E_OPEN_LOG=${{ github.workspace }}/opened" >> "$GITHUB_ENV"
+
+      - name: Validate clipboard forwarding
+        run: ./slush validate root@e2e
+
+      - name: Copy remote to local clipboard
+        run: |
+          ./slush root@e2e 'printf hello-e2e | pbcopy'
+          test "$(cat "$E2E_CLIP_FILE")" = hello-e2e
+
+      - name: Paste local clipboard to remote
+        run: |
+          printf back-again > "$E2E_CLIP_FILE"
+          test "$(./slush root@e2e 'pbpaste')" = back-again
+
+      - name: Open URL locally
+        run: |
+          ./slush root@e2e 'slush-open https://example.com/e2e'
+          test "$(cat "$E2E_OPEN_LOG")" = https://example.com/e2e
+
+      - name: Validate over mosh
+        # Not gating yet: mosh needs UDP and a pty in CI. Collects
+        # signal until it proves stable, then remove continue-on-error.
+        continue-on-error: true
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq mosh
+          ./slush --mosh validate root@e2e
+
+      - name: Remove sshd container
+        if: always()
+        run: docker rm -f slush-sshd
+
+  e2e-macos:
+    name: E2E (macOS, local sshd)
+    runs-on: macos-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build slush
+        run: go build -o slush .
+
+      - name: Start local sshd
+        run: |
+          ssh-keygen -q -t ed25519 -f e2e_key -N ""
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          cat e2e_key.pub >> ~/.ssh/authorized_keys
+          chmod 600 ~/.ssh/authorized_keys
+          sudo /usr/sbin/sshd -p 2222 -o PidFile=/tmp/e2e_sshd.pid -E /tmp/e2e_sshd.log
+          cat >> ~/.ssh/config <<EOF
+          Host e2e
+            HostName 127.0.0.1
+            Port 2222
+            User $USER
+            IdentityFile ${{ github.workspace }}/e2e_key
+            StrictHostKeyChecking no
+            UserKnownHostsFile /dev/null
+            BatchMode yes
+          EOF
+          for i in $(seq 1 30); do
+            ssh -o ConnectTimeout=2 e2e true 2>/dev/null && break
+            sleep 2
+          done
+          ssh -o ConnectTimeout=5 e2e true
+
+      - name: Stub local clipboard backends
+        run: |
+          mkdir -p fakebin
+          cat > fakebin/pbcopy <<'EOF'
+          #!/bin/sh
+          cat > "$E2E_CLIP_FILE"
+          EOF
+          cat > fakebin/pbpaste <<'EOF'
+          #!/bin/sh
+          cat "$E2E_CLIP_FILE"
+          EOF
+          cat > fakebin/open <<'EOF'
+          #!/bin/sh
+          printf '%s\n' "$@" >> "$E2E_OPEN_LOG"
+          EOF
+          chmod +x fakebin/*
+          echo "${{ github.workspace }}/fakebin" >> "$GITHUB_PATH"
+          echo "E2E_CLIP_FILE=${{ github.workspace }}/clipboard" >> "$GITHUB_ENV"
+          echo "E2E_OPEN_LOG=${{ github.workspace }}/opened" >> "$GITHUB_ENV"
+
+      - name: Validate clipboard forwarding
+        run: ./slush validate "$USER"@e2e
+
+      - name: Copy remote to local clipboard
+        run: |
+          ./slush "$USER"@e2e 'printf hello-e2e | pbcopy'
+          test "$(cat "$E2E_CLIP_FILE")" = hello-e2e
+
+      - name: Paste local clipboard to remote
+        run: |
+          printf back-again > "$E2E_CLIP_FILE"
+          test "$(./slush "$USER"@e2e 'pbpaste')" = back-again
+
+      - name: Open URL locally
+        run: |
+          ./slush "$USER"@e2e 'slush-open https://example.com/e2e'
+          test "$(cat "$E2E_OPEN_LOG")" = https://example.com/e2e
+
+      - name: Stop local sshd
+        if: always()
+        run: sudo kill "$(cat /tmp/e2e_sshd.pid)" || true

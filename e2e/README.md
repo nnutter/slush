@@ -30,7 +30,8 @@ Guest boot and package installation can take approximately 15 minutes.
 - Both `-L` and `-R` forwards carry real bytes.
 - SSH preserves the remote command's exit status and honors explicit port and identity options.
 - Signal termination releases the local listener and the extra reverse forward.
-- Interactive login shells can copy and paste after shell startup.
+- Default interactive shells can copy and paste after shell startup.
+- Zsh preserves a custom `ZDOTDIR` and user startup files while restoring shim priority after a login profile resets `PATH`.
 - Linux client selection exercises Wayland, xclip, and xsel backends.
 
 A `validate` invocation is an SSH probe regardless of mode; it is not evidence that a mosh session works.

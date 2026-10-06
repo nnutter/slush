@@ -19,15 +19,22 @@ PasswordAuthentication no
 KbdInteractiveAuthentication no
 PermitRootLogin prohibit-password
 UsePAM no
-AllowUsers $user
+AllowUsers $user slush-zsh
 AllowTcpForwarding yes
-SetEnv XDG_CACHE_HOME=$root/remote-cache
+Match User $user
+  SetEnv XDG_CACHE_HOME=$root/remote-cache
+Match User slush-zsh
+  SetEnv XDG_CACHE_HOME=$root/zsh-cache
 EOF
 cat > "$root/ssh_config" <<EOF
 Host native
   HostName 127.0.0.1
   Port 2222
   User $user
+Host native-zsh
+  HostName 127.0.0.1
+  Port 2222
+  User slush-zsh
 Host *
   IdentityFile $root/key
   IdentitiesOnly yes
@@ -40,9 +47,18 @@ if [[ $(uname -s) == Linux ]]; then
   docker run -d --name slush-e2e --publish 127.0.0.1:2222:2222 \
     --publish 127.0.0.1:60000-60010:60000-60010/udp \
     --volume "$root:$root" ubuntu:24.04 sleep infinity
-  docker exec slush-e2e bash -ec 'apt-get update -qq; DEBIAN_FRONTEND=noninteractive apt-get install -y -qq openssh-server python3 mosh; mkdir -p /run/sshd; passwd -d root'
+  docker exec slush-e2e bash -ec 'apt-get update -qq; DEBIAN_FRONTEND=noninteractive apt-get install -y -qq openssh-server python3 mosh zsh; mkdir -p /run/sshd; passwd -d root; useradd -m -d /tmp/slush-zsh-home -s /bin/zsh slush-zsh; passwd -d slush-zsh'
+  docker exec slush-e2e bash -ec "mkdir -p '$root/zsh-cache'; chown slush-zsh:slush-zsh '$root/zsh-cache'"
   docker exec slush-e2e /usr/sbin/sshd -f "$root/sshd_config" -E "$root/sshd.log"
 else
+  sudo dscl . -create /Users/slush-zsh
+  sudo dscl . -create /Users/slush-zsh UniqueID 599
+  sudo dscl . -create /Users/slush-zsh PrimaryGroupID 20
+  sudo dscl . -create /Users/slush-zsh NFSHomeDirectory "$root/zsh-home"
+  sudo dscl . -create /Users/slush-zsh UserShell /bin/zsh
+  sudo dscl . -passwd /Users/slush-zsh "$(openssl rand -hex 24)"
+  mkdir -p "$root/zsh-home" "$root/zsh-cache"
+  sudo chown slush-zsh:staff "$root/zsh-home" "$root/zsh-cache"
   sudo /usr/sbin/sshd -f "$root/sshd_config" -E "$root/sshd.log"
 fi
 for i in {1..30}; do

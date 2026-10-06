@@ -21,11 +21,21 @@ users:
     sudo: ALL=(ALL) NOPASSWD:ALL
     ssh_authorized_keys:
       - $(cat "$root/key.pub")
-packages: [mosh, python3]
+  - name: slush-zsh
+    homedir: /tmp/slush-zsh-home
+    shell: /bin/zsh
+    ssh_authorized_keys:
+      - $(cat "$root/key.pub")
+packages: [mosh, python3, zsh]
 write_files:
-  - path: /etc/ssh/sshd_config.d/slush-e2e.conf
+  - path: /tmp/slush-sshd-match.conf
     content: |
-      SetEnv XDG_CACHE_HOME=/tmp/slush-remote-cache
+      Match User e2e
+        SetEnv XDG_CACHE_HOME=/tmp/slush-remote-cache
+      Match User slush-zsh
+        SetEnv XDG_CACHE_HOME=/tmp/slush-zsh-cache
+runcmd:
+  - [sh, -c, 'cat /tmp/slush-sshd-match.conf >> /etc/ssh/sshd_config; systemctl restart ssh']
 EOF
 hdiutil makehybrid -iso -joliet -default-volume-name cidata \
   -o "$root/seed.iso" "$root/seed"
@@ -42,6 +52,10 @@ Host linux
   HostName 127.0.0.1
   Port 2223
   User e2e
+Host linux-zsh
+  HostName 127.0.0.1
+  Port 2223
+  User slush-zsh
 EOF
 # Host * appears earlier; it sets only common auth options, not the port/user.
 for i in {1..180}; do

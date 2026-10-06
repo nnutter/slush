@@ -329,6 +329,44 @@ print('FORWARD_PASS', flush=True)
         'printf "INTERACTIVE_%s\\n" PASS; exit\n'))
     assert code == 0 and 'INTERACTIVE_PASS' in output, output
     assert (ROOT / 'clipboard').read_bytes() == b'interactive-payload'
+    # Zsh must retain user startup files while restoring shim priority after
+    # a login profile resets PATH. This isolated account really uses zsh.
+    dotdir = '/tmp/' + ROOT.name + '-zsh'
+    prepare = '''import pathlib, shlex
+print('start - zsh fixture preparation', flush=True)
+root = pathlib.Path(__DOTDIR__)
+root.mkdir()
+(root / '.zshenv').write_text('export E2E_PROFILE=seen\\n')
+(root / '.zprofile').write_text('export E2E_LOGIN_PROFILE=seen PATH=/usr/bin:/bin\\n')
+(root / '.zshrc').write_text('export E2E_RC=seen\\n')
+(root / '.zlogin').write_text('export E2E_LOGIN=seen PATH=/usr/bin:/bin\\n')
+(pathlib.Path.home() / '.zshenv').write_text('export ZDOTDIR=' + shlex.quote(str(root)) + '\\nsource "$ZDOTDIR/.zshenv"\\n')
+print('finish - zsh fixture preparation', flush=True)
+'''.replace('__DOTDIR__', repr(dotdir))
+    zsh_host = HOST + '-zsh'
+    # Resolve the interpreter itself, not macOS's /usr/bin/python3 launcher.
+    python = subprocess.check_output([SSH, '-F', CONFIG, HOST,
+                                      "python3 -c 'import sys; print(sys.executable)'"],
+                                     text=True, timeout=60, stdin=subprocess.DEVNULL).strip()
+    print('info - fixture interpreter', python, flush=True)
+    subprocess.run([SSH, '-F', CONFIG, zsh_host,
+                    shlex.quote(python) + ' -c ' + shlex.quote(prepare)],
+                   check=True, timeout=60, stdin=subprocess.DEVNULL)
+    if MODE == 'ssh':
+        argv = [SLUSH, zsh_host]
+    else:
+        # Fresh macOS accounts have no Homebrew path during SSH bootstrap.
+        server = subprocess.check_output([SSH, '-F', CONFIG, HOST,
+                                          'command -v mosh-server'], text=True).strip()
+        argv = [SLUSH, '--mosh', '--server', server, '--', zsh_host]
+    code, output = terminal(argv, 90, shell_input=(
+        'test "$SLUSH" = 1 && test "$E2E_PROFILE" = seen && '
+        'test "$E2E_LOGIN_PROFILE" = seen && test "$E2E_RC" = seen && '
+        'test "$E2E_LOGIN" = seen && '
+        'printf zsh-payload | pbcopy && test "$(pbpaste)" = zsh-payload && '
+        'printf "ZSH_%s\\n" PASS; exit\n'))
+    assert code == 0 and 'ZSH_PASS' in output, output
+    assert (ROOT / 'clipboard').read_bytes() == b'zsh-payload'
     # Repeat against every Linux native backend selection path.
     if sys.platform != "darwin":
         ENV.pop("WAYLAND_DISPLAY", None)

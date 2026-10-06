@@ -49,6 +49,11 @@ jobs:
             HostName 10.0.2.2
             Port 2222
             User $USER
+          Host mac-zsh
+            HostName 10.0.2.2
+            Port 2222
+            User slush-zsh
+          Host *
             IdentityFile /tmp/slush-peer/key
             IdentitiesOnly yes
             StrictHostKeyChecking no

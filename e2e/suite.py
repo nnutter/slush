@@ -303,6 +303,14 @@ print('FORWARD_PASS', flush=True)
     if MODE == "ssh":
         code, output = session("exit 37")
         assert code == 37, (code, output)
+    # A no-command session must preserve forwarding through login startup.
+    argv = [SLUSH, HOST] if MODE == 'ssh' else [SLUSH, '--mosh', '--', HOST]
+    code, output = terminal(argv, 60, shell_input=(
+        'test "$SLUSH" = 1 && printf interactive-payload | pbcopy && '
+        'test "$(pbpaste)" = interactive-payload && '
+        'printf "INTERACTIVE_%s\\n" PASS; exit\n'))
+    assert code == 0 and 'INTERACTIVE_PASS' in output, output
+    assert (ROOT / 'clipboard').read_bytes() == b'interactive-payload'
     # Repeat against every Linux native backend selection path.
     if sys.platform != "darwin":
         ENV.pop("WAYLAND_DISPLAY", None)

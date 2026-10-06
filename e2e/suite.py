@@ -210,7 +210,9 @@ PAYLOAD = bytes(range(256)) * 4096 + b"\nquotes ' \\\" unicode \xe2\x98\x83\n"
 DIGEST = hashlib.sha256(PAYLOAD).hexdigest()
 # Generate the payload remotely instead of exceeding SSH's command-size limit.
 REMOTE_PAYLOAD = 'bytes(range(256)) * 4096 + ' + repr(PAYLOAD[256 * 4096:])
-REMOTE = '''import hashlib, os, socket, subprocess
+REMOTE = '''import hashlib, os, pathlib, socket, subprocess
+cache = pathlib.Path(os.environ.get('XDG_CACHE_HOME') or pathlib.Path.home() / '.cache')
+assert (cache / 'slush/slush-env').stat().st_mode & 0o077 == 0, 'session token is not private'
 assert os.environ['SLUSH'] == '1'
 assert os.environ['BROWSER'] == 'slush-open'
 assert os.environ['SLUSH_TOKEN']
@@ -237,6 +239,9 @@ try:
     code, output = terminal([SLUSH, "validate", HOST], 120)
     assert code == 0 and "all 10 checks passed" in output, output
     (ROOT / "calls").write_text("")
+    # Simulate permissions left by an older installation; refresh must repair.
+    subprocess.run([SSH, '-F', CONFIG, HOST,
+                    'chmod 644 "${XDG_CACHE_HOME:-$HOME/.cache}/slush/slush-env"'], check=True)
     checked(REMOTE)
     records = [json.loads(line) for line in (ROOT / "calls").read_text().splitlines()]
     assert sum(r["op"] == "copy" for r in records) == 4, records

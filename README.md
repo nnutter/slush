@@ -13,22 +13,55 @@ tunnel and server go with it.
 
 By default `slush` invokes `ssh` with a held ControlMaster plus
 `-R 2489:127.0.0.1:2489`.
-Pass `--mosh` as the first argument to use [mosh](https://mosh.org) for the TTY while keeping forwards up with a background `ssh -N` ControlMaster.
+Select [mosh](https://mosh.org) with `--transport mosh`, or use the `--mosh` shorthand.
+Slush owns its options and uses the same connection and forwarding settings for both transports.
+Use `--help`, `--version`, or `completion` for CLI help, build information, and shell completions.
+
+```sh
+slush --transport ssh user@host
+slush --transport mosh -p 2222 -i ./key user@host
+slush validate --transport mosh user@host
+```
+
+`-p`/`--port` selects the SSH connection port in either mode, not a mosh UDP port.
+`-i`/`--identity` selects an SSH identity file, and `-F`/`--config` selects an SSH configuration file.
+Otherwise, SSH configuration supplies connection defaults.
+Slush rejects unknown flags before the host instead of passing them to a native client.
+Arguments after the host form a remote shell command and are not parsed as slush options.
+Use `slush -- validate` to connect to a host literally named `validate`.
 
 Clipboard forwarding needs `python3` on the remote (for the shims).
 
 ## Port forwards
 
-OpenSSH-style `-L` and `-R` forwards are supported in all modes and always go through `ssh`:
+Use `-L`/`--local-forward` to listen locally and connect from the remote machine.
+Use `-R`/`--remote-forward` to listen remotely and connect from the local machine.
+Both transports carry these TCP forwards through the held SSH connection.
 
 ```sh
-# Browse a remote service at http://localhost:8080
-slush -L 8080:127.0.0.1:8080 user@host
-slush --mosh -L 8080:127.0.0.1:8080 user@host
+slush -L 8080 user@host
+slush --transport mosh -L 8080:80 user@host
+slush -R 9000:localhost:3000 user@host
 ```
 
-Multiple `-L`/`-R` options may be given. Combined forms (`-L8080:127.0.0.1:8080`) work too.
-With `--mosh`, those flags are applied on the background ssh tunnel and are not passed to mosh.
+Omitted bind addresses and destination hosts mean `localhost` on their respective machines.
+If only one port is given, both ends use that port.
+
+| Specification | Listen address | Destination |
+| --- | --- | --- |
+| `8080` | `localhost:8080` | `localhost:8080` |
+| `8080:80` | `localhost:8080` | `localhost:80` |
+| `8080:db` | `localhost:8080` | `db:8080` |
+| `8080:db:5432` | `localhost:8080` | `db:5432` |
+| `127.0.0.1:8080:80` | `127.0.0.1:8080` | `localhost:80` |
+| `127.0.0.1:8080:db:5432` | `127.0.0.1:8080` | `db:5432` |
+| `[::1]:8080:[::1]:80` | `[::1]:8080` | `[::1]:80` |
+
+Empty address fields also mean `localhost`, as in `:8080::80`.
+Bracket IPv6 addresses so their colons are not field separators.
+Repeat `-L` or `-R` for multiple forwards, or use combined forms such as `-L8080`.
+Ports must be between 1 and 65535.
+Unix socket forwards, dynamic port allocation, and arbitrary native transport flags are not supported.
 
 ## Clipboard and open
 
@@ -58,8 +91,9 @@ them with your own `-L` forward when the service lives remotely.
 
 ## Validate
 
-`slush [--mosh] validate [host...]` checks the whole path and
-reports per check (`ok`/`FAIL`) with a nonzero exit on failure:
+`slush validate [options] HOST` checks the whole path and reports each check (`ok`/`FAIL`).
+It returns a nonzero exit status if a check fails.
+It accepts the same connection, transport, and forwarding options as a session:
 
 ```sh
 slush validate user@host

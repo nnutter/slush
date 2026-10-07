@@ -13,6 +13,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// run exercises the real command entry point and maps its error to a status.
+func run(args []string) int {
+	return commandExitCode(execute(args))
+}
+
 // emptyPath returns a PATH with no usable binaries: an empty dir, plus
 // an extra missing entry on unix so bare command names still fail.
 func emptyPath(t *testing.T) string {

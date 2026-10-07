@@ -68,7 +68,7 @@ func TestRunEndToEndSSHWithLocalForward(t *testing.T) {
 	useEphemeralClipboardPort(t)
 
 	binDir := t.TempDir()
-	writeFakeSSHSession(t, binDir, fakeSSHSession{masterForwards: []string{"-L", "8080:127.0.0.1:8080"}})
+	writeFakeSSHSession(t, binDir, fakeSSHSession{masterForwards: []string{"-L", "localhost:8080:127.0.0.1:8080"}})
 	t.Setenv("PATH", binDir)
 
 	require.NoError(t, ensureClipboardPortFree())
@@ -123,7 +123,7 @@ func TestRunEndToEndMoshWithLocalForward(t *testing.T) {
 	useEphemeralClipboardPort(t)
 
 	binDir := t.TempDir()
-	writeFakeSSHTunnel(t, binDir, "-L", "8080:127.0.0.1:8080")
+	writeFakeSSHTunnel(t, binDir, "-L", "localhost:8080:127.0.0.1:8080")
 	writeFakeMosh(t, binDir)
 	t.Setenv("PATH", binDir)
 

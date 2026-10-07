@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -37,6 +38,13 @@ func runMoshSession(options sessionOptions, token string) (int, error) {
 	clientArgs, err := withRemoteEnvMosh(args, token)
 	if err != nil {
 		return 0, err
+	}
+	if len(options.connOpts) > 0 {
+		quoted := make([]string, len(options.connOpts))
+		for i, option := range options.connOpts {
+			quoted[i] = shellQuote(option)
+		}
+		clientArgs = append([]string{"--ssh=ssh " + strings.Join(quoted, " ")}, clientArgs...)
 	}
 	moshPath, err := exec.LookPath("mosh")
 	if err != nil {

@@ -22,9 +22,9 @@ UsePAM no
 AllowUsers $user slush-zsh
 AllowTcpForwarding yes
 Match User $user
-  SetEnv XDG_CACHE_HOME=$root/remote-cache
+  SetEnv XDG_CACHE_HOME=$root/remote-cache PATH=/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin
 Match User slush-zsh
-  SetEnv XDG_CACHE_HOME=$root/zsh-cache
+  SetEnv XDG_CACHE_HOME=$root/zsh-cache PATH=/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin
 EOF
 cat > "$root/ssh_config" <<EOF
 Host native

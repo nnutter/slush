@@ -66,10 +66,8 @@ for name in ("pbcopy", "pbpaste", "wl-copy", "wl-paste", "xclip", "xsel", "open"
 def session(command, timeout=90, extra=(), raw=False, tick=None):
     if raw:
         argv = [SLUSH, *extra, HOST, command]
-    elif MODE == "ssh":
-        argv = [SLUSH, *extra, HOST, command]
     else:
-        argv = [SLUSH, "--mosh", *extra, "--", HOST, "sh", "-c", command]
+        argv = [SLUSH, '--transport', MODE, *extra, HOST, command]
     return terminal(argv, timeout, tick)
 
 
@@ -241,7 +239,8 @@ try:
     (ROOT / "calls").write_text("")
     # Simulate permissions left by an older installation; refresh must repair.
     subprocess.run([SSH, '-F', CONFIG, HOST,
-                    'chmod 644 "${XDG_CACHE_HOME:-$HOME/.cache}/slush/slush-env"'], check=True)
+                    'chmod 644 "${XDG_CACHE_HOME:-$HOME/.cache}/slush/slush-env"'],
+                   check=True, timeout=60, stdin=subprocess.DEVNULL)
     checked(REMOTE)
     records = [json.loads(line) for line in (ROOT / "calls").read_text().splitlines()]
     assert sum(r["op"] == "copy" for r in records) == 4, records
@@ -254,7 +253,8 @@ try:
     checked("import subprocess\nassert subprocess.check_output(['pbpaste']) == " + REMOTE_PAYLOAD)
     # Force the upgrade path, then prove installed commands still work.
     subprocess.run([SSH, '-F', CONFIG, HOST,
-                    'printf stale > "${XDG_CACHE_HOME:-$HOME/.cache}/slush/VERSION"'], check=True)
+                    'printf stale > "${XDG_CACHE_HOME:-$HOME/.cache}/slush/VERSION"'],
+                   check=True, timeout=60, stdin=subprocess.DEVNULL)
     checked("import subprocess\nassert subprocess.check_output(['pbpaste']) == " + REMOTE_PAYLOAD)
     (ROOT / "fail").touch()
     checked("import subprocess\nfor args in [['pbcopy'], ['pbpaste'], ['slush-open', 'https://example.com/fail']]:\n    assert subprocess.run(args, input=b'x').returncode != 0, args")
@@ -295,8 +295,8 @@ with socket.socket() as listener:
 print('FORWARD_PASS', flush=True)
 '''
         code, output = session(python_command(script), extra=(
-            '-L', str(local_port) + ':127.0.0.1:39091',
-            '-R', '39093:127.0.0.1:' + str(reverse_port)), tick=forward_tick)
+            '-L', str(local_port) + ':39091',
+            '-R', '39093:' + str(reverse_port)), tick=forward_tick)
         worker.join(5)
         assert code == 0 and sent[0] and 'FORWARD_PASS' in output and not worker.is_alive(), output
     # SIGTERM must tear down the server and reverse listener too.
@@ -314,20 +314,20 @@ print('FORWARD_PASS', flush=True)
     if MODE == "ssh":
         code, output = session("exit 37")
         assert code == 37, (code, output)
-        # Bypass the named host: CLI port/identity must reach the master too.
-        config = subprocess.check_output([SSH, '-G', '-F', CONFIG, HOST], text=True)
-        resolved = {}
-        for line in config.splitlines():
-            key, _, value = line.partition(' ')
-            resolved.setdefault(key, value)
-        code, output = terminal([SLUSH, '-p', resolved['port'], '-i', resolved['identityfile'],
-                                 '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=no',
-                                 '-o', 'UserKnownHostsFile=' + str(ROOT / 'known_hosts'),
-                                 resolved['user'] + '@' + resolved['hostname'],
-                                 "printf 'OPTIONS_%s\\n' PASS"], 90)
-        assert code == 0 and 'OPTIONS_PASS' in output, output
+    # Both transports use the same normalized SSH connection options.
+    config = subprocess.check_output([SSH, '-G', '-F', CONFIG, HOST],
+                                     text=True, timeout=60, stdin=subprocess.DEVNULL)
+    resolved = {}
+    for line in config.splitlines():
+        key, _, value = line.partition(' ')
+        resolved.setdefault(key, value)
+    code, output = terminal([SLUSH, '--transport', MODE,
+                             '-p', resolved['port'], '-i', resolved['identityfile'], '-F', CONFIG,
+                             resolved['user'] + '@' + resolved['hostname'],
+                             "printf 'OPTIONS_%s\\n' PASS"], 90)
+    assert code == 0 and 'OPTIONS_PASS' in output, output
     # A no-command session must preserve forwarding through login startup.
-    argv = [SLUSH, HOST] if MODE == 'ssh' else [SLUSH, '--mosh', '--', HOST]
+    argv = [SLUSH, '--transport', MODE, HOST]
     code, output = terminal(argv, 60, shell_input=(
         'test "$SLUSH" = 1 && printf interactive-payload | pbcopy && '
         'test "$(pbpaste)" = interactive-payload && '
@@ -357,13 +357,7 @@ print('finish - zsh fixture preparation', flush=True)
     subprocess.run([SSH, '-F', CONFIG, zsh_host,
                     shlex.quote(python) + ' -c ' + shlex.quote(prepare)],
                    check=True, timeout=60, stdin=subprocess.DEVNULL)
-    if MODE == 'ssh':
-        argv = [SLUSH, zsh_host]
-    else:
-        # Fresh macOS accounts have no Homebrew path during SSH bootstrap.
-        server = subprocess.check_output([SSH, '-F', CONFIG, HOST,
-                                          'command -v mosh-server'], text=True).strip()
-        argv = [SLUSH, '--mosh', '--server', server, '--', zsh_host]
+    argv = [SLUSH, '--transport', MODE, zsh_host]
     code, output = terminal(argv, 90, shell_input=(
         'test "$SLUSH" = 1 && test "$E2E_PROFILE" = seen && '
         'test "$E2E_LOGIN_PROFILE" = seen && test "$E2E_RC" = seen && '

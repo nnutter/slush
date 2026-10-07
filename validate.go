@@ -12,7 +12,6 @@ package main
 import (
 	"fmt"
 	"io"
-	"os"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -44,24 +43,10 @@ func (v *validator) fail(name, detail string) {
 	fmt.Fprintf(v.out, "FAIL - %s: %s\n", name, detail)
 }
 
-// runValidate validates clipboard forwarding against a remote.
-func runValidate(mode clientMode, args []string) int {
-	token, err := clipboard.GenerateToken()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "slush: %v\n", err)
-		return 1
-	}
-	if err := runValidateChecks(mode, args, token, os.Stdout); err != nil {
-		fmt.Fprintf(os.Stderr, "slush: validate: %v\n", err)
-		return 1
-	}
-	return 0
-}
-
-func runValidateChecks(mode clientMode, args []string, token string, out io.Writer) error {
+func runValidateChecksWithOptions(options sessionOptions, token string, out io.Writer) error {
 	v := &validator{out: out}
 
-	host, connOpts, forwards, err := validateTarget(mode, args)
+	host, connOpts, forwards, err := validateTarget(options)
 	if err != nil {
 		v.fail("target", err.Error())
 		return fmt.Errorf("1 check failed")
@@ -123,7 +108,7 @@ func runValidateChecks(mode clientMode, args []string, token string, out io.Writ
 	}
 
 	// Session environment: the wrapper each mode injects.
-	checkSessionEnv(v, mode, args, token, probe)
+	checkSessionEnv(v, options.mode, options.args, token, probe)
 
 	// Round trip remote -> local.
 	payloadOut := fmt.Sprintf("slush-validate-%d", time.Now().UnixNano())
@@ -180,21 +165,16 @@ func probeEnvPrefix(token string) string {
 
 // validateTarget resolves the tunnel host, connection options, and
 // forwards for the validate mode. Probes always run over the ssh
-// tunnel, whatever the session transport. Only ssh mode carries
-// connection options today; mosh tunnel limitations match sessions.
-func validateTarget(mode clientMode, args []string) (host string, connOpts, forwards []string, err error) {
-	options, err := sessionOptionsFromArgs(mode, args)
-	if err != nil {
-		return "", nil, nil, err
-	}
+// tunnel, whatever the session transport.
+func validateTarget(options sessionOptions) (host string, connOpts, forwards []string, err error) {
 	rest, forwards := options.args, options.forwards
-	switch mode {
+	switch options.mode {
 	case modeMosh:
 		host, err := moshDestination(rest)
 		if err != nil {
 			return "", nil, nil, err
 		}
-		return host, nil, forwards, nil
+		return host, options.connOpts, forwards, nil
 	default:
 		host, err := sshHostOperand(rest)
 		if err != nil {
@@ -263,11 +243,7 @@ func checkSessionEnv(v *validator, mode clientMode, args []string, token string,
 // args so the env check wraps the same shape the session would. A
 // dummy command keeps the split working when the user gave none.
 func sshHeadFor(args []string) []string {
-	_, rest, err := takeSSHForwards(args)
-	if err != nil {
-		return nil
-	}
-	head, _, err := splitSSHRemoteCommand(append(rest, "true"))
+	head, _, err := splitSSHRemoteCommand(append(args, "true"))
 	if err != nil {
 		return nil
 	}

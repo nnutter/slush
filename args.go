@@ -18,71 +18,6 @@ const (
 	modeMosh
 )
 
-// takeModeFlags consumes leading slush mode flags and returns the selected
-// client mode plus remaining args.
-func takeModeFlags(args []string) (clientMode, []string, error) {
-	mode := modeSSH
-	rest := args
-	for len(rest) > 0 {
-		switch rest[0] {
-		case "--et":
-			return 0, nil, fmt.Errorf("--et is no longer supported; use ssh or --mosh")
-		case "--mosh":
-			mode = modeMosh
-			rest = rest[1:]
-		default:
-			return mode, rest, nil
-		}
-	}
-	return mode, rest, nil
-}
-
-func clientBinary(mode clientMode) string {
-	if mode == modeMosh {
-		return "mosh"
-	}
-	return "ssh"
-}
-
-// takeSSHForwards removes OpenSSH-style -L/-R forward options from args.
-// Combined forms (-Lspec / -Rspec) are normalized to separate flag and spec.
-func takeSSHForwards(args []string) (forwards, rest []string, err error) {
-	rest = make([]string, 0, len(args))
-	for i := 0; i < len(args); i++ {
-		arg := args[i]
-		if arg == "--" {
-			rest = append(rest, args[i:]...)
-			return forwards, rest, nil
-		}
-		if flag, spec, ok := splitCombinedForward(arg); ok {
-			if spec == "" {
-				return nil, nil, fmt.Errorf("%s requires an argument", flag)
-			}
-			forwards = append(forwards, flag, spec)
-			continue
-		}
-		if arg == "-L" || arg == "-R" {
-			if i+1 >= len(args) {
-				return nil, nil, fmt.Errorf("%s requires an argument", arg)
-			}
-			forwards = append(forwards, arg, args[i+1])
-			i++
-			continue
-		}
-		rest = append(rest, arg)
-	}
-	return forwards, rest, nil
-}
-
-func splitCombinedForward(arg string) (flag, spec string, ok bool) {
-	for _, f := range []string{"-L", "-R"} {
-		if strings.HasPrefix(arg, f) && arg != f {
-			return f, arg[len(f):], true
-		}
-	}
-	return "", "", false
-}
-
 // remoteSlushDirExpr is the shell expression for the provisioned
 // slush directory. It must match shim.py's shim_dir.
 const remoteSlushDirExpr = `${XDG_CACHE_HOME:-$HOME/.cache}/slush`
@@ -108,17 +43,6 @@ func sshHostOperand(args []string) (string, error) {
 		return "", err
 	}
 	return args[idx], nil
-}
-
-// sshConnOpts returns the ssh connection options (everything before
-// the host operand) so the tunnel master honors non-default ports,
-// identities, and jumps.
-func sshConnOpts(rest []string) ([]string, error) {
-	head, _, err := splitSSHRemoteCommand(rest)
-	if err != nil {
-		return nil, err
-	}
-	return slices.Clone(head[:len(head)-1]), nil
 }
 
 // splitSSHRemoteCommand splits ssh-style args into the head (options
@@ -168,13 +92,6 @@ func sshHostIndex(args []string) (int, error) {
 				continue
 			}
 			return i, nil
-		}
-		if flag, _, ok := splitCombinedForward(arg); ok && (flag == "-L" || flag == "-R") {
-			continue
-		}
-		if arg == "-L" || arg == "-R" {
-			i++
-			continue
 		}
 		if isCombinedSSHFlag(arg) {
 			continue

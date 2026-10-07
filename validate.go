@@ -46,7 +46,7 @@ func (v *validator) fail(name, detail string) {
 func runValidateChecksWithOptions(options sessionOptions, token string, out io.Writer) error {
 	v := &validator{out: out}
 
-	host, connOpts, forwards, err := validateTarget(options)
+	host, err := validateTarget(options)
 	if err != nil {
 		v.fail("target", err.Error())
 		return fmt.Errorf("1 check failed")
@@ -69,7 +69,7 @@ func runValidateChecksWithOptions(options sessionOptions, token string, out io.W
 		v.fail("tunnel", "ssh not found on PATH")
 		return fmt.Errorf("1 check failed")
 	}
-	teardown, controlPath, err := establishSession(sshPath, host, connOpts, forwards, token)
+	teardown, params, err := establishSession(sshPath, host, options, token)
 	if err != nil {
 		v.fail("tunnel", err.Error())
 		return fmt.Errorf("1 check failed")
@@ -79,7 +79,16 @@ func runValidateChecksWithOptions(options sessionOptions, token string, out io.W
 
 	probe := func(script string) (string, error) {
 		return sshExec(sshPath, host, probeEnvPrefix(token)+script, nil,
-			[]string{"-o", "ControlMaster=no", "-S", controlPath})
+			append([]string{"-o", "ControlMaster=no", "-S", params.controlPath}, options.connOpts...))
+	}
+
+	if options.forwardAgent {
+		output, err := probe(`test -S "$SSH_AUTH_SOCK" && { ssh-add -l >/dev/null 2>&1; agent_status=$?; test "$agent_status" -le 1; } && printf agent-ready`)
+		if err != nil || strings.TrimSpace(output) != "agent-ready" {
+			v.fail("SSH agent", fmt.Sprintf("remote agent is unavailable; check sshd AllowAgentForwarding: output %q, error %v", strings.TrimSpace(output), err))
+		} else {
+			v.ok("SSH agent forwarding")
+		}
 	}
 
 	// Shim version: proves provisioning landed.
@@ -163,25 +172,13 @@ func probeEnvPrefix(token string) string {
 	return remoteEnvPrefix(token) + fmt.Sprintf("SLUSH_PORT=%d ", clipboardPort)
 }
 
-// validateTarget resolves the tunnel host, connection options, and
-// forwards for the validate mode. Probes always run over the ssh
-// tunnel, whatever the session transport.
-func validateTarget(options sessionOptions) (host string, connOpts, forwards []string, err error) {
-	rest, forwards := options.args, options.forwards
-	switch options.mode {
-	case modeMosh:
-		host, err := moshDestination(rest)
-		if err != nil {
-			return "", nil, nil, err
-		}
-		return host, options.connOpts, forwards, nil
-	default:
-		host, err := sshHostOperand(rest)
-		if err != nil {
-			return "", nil, nil, err
-		}
-		return host, options.connOpts, forwards, nil
+// validateTarget resolves the tunnel host. Probes always run over SSH,
+// whatever the session transport.
+func validateTarget(options sessionOptions) (string, error) {
+	if options.mode == modeMosh {
+		return moshDestination(options.args)
 	}
+	return sshHostOperand(options.args)
 }
 
 // checkSessionEnv verifies the per-mode environment wrapper by
@@ -189,7 +186,7 @@ func validateTarget(options sessionOptions) (host string, connOpts, forwards []s
 func checkSessionEnv(v *validator, mode clientMode, args []string, token string, probe func(string) (string, error)) {
 	switch mode {
 	case modeMosh:
-		wrapped, err := withRemoteEnvMosh([]string{"probehost", "sh", "-c", `printf '%s\n' "$SLUSH" "$SLUSH_TOKEN" "$BROWSER"`}, token)
+		wrapped, err := withRemoteEnvMosh([]string{"probehost", "sh", "-c", `printf '%s\n' "$SLUSH" "$SLUSH_TOKEN" "$BROWSER"`}, sessionParams{token: token})
 		if err != nil {
 			v.fail("session env", err.Error())
 			return

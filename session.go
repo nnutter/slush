@@ -34,5 +34,8 @@ func runSSHSession(options sessionOptions, token string) (int, error) {
 	if interactive && process.StdinIsTerminal() {
 		clientArgs = append([]string{"-t"}, clientArgs...)
 	}
-	return runTunneledSession(sshPath, host, options.connOpts, clientArgs, options.forwards, token, withSSHControlPath)
+	return runTunneledSession(sshPath, host, options, clientArgs, token,
+		func(args []string, params sessionParams) ([]string, error) {
+			return withSSHControlPath(args, params), nil
+		})
 }

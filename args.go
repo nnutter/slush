@@ -192,12 +192,15 @@ func splitMoshCommand(args []string) (pre []string, host string, cmd []string, e
 // is explicit argv: sh -c 'export ...; exec ...'. Exactly one "--"
 // separates options from the host: mosh's option parser abbreviates
 // -c to --client, so an unprotected `sh -c` would misparse.
-func withRemoteEnvMosh(args []string, token string) ([]string, error) {
+func withRemoteEnvMosh(args []string, params sessionParams) ([]string, error) {
 	pre, host, cmd, err := splitMoshCommand(args)
 	if err != nil {
 		return nil, err
 	}
-	script := remoteEnvPrefix(token)
+	script := remoteEnvPrefix(params.token)
+	if params.agentSocket != "" {
+		script += "export SSH_AUTH_SOCK=" + shellQuote(params.agentSocket) + "; "
+	}
 	tail := []string{}
 	if len(cmd) == 0 {
 		script += interactiveShellCommand
@@ -257,8 +260,8 @@ func isMoshCombinedShortOpt(arg string) bool {
 	return strings.HasPrefix(arg, "-p") && arg != "-p" && !strings.HasPrefix(arg, "--")
 }
 
-// withMoshSSHControlPath ensures mosh's bootstrap ssh reuses the ControlMaster
-// socket that holds the port forwards.
+// withMoshSSHControlPath supplies the held master's path to bootstrap SSH.
+// Mosh's default IP-discovery proxy overrides it with -S none.
 func withMoshSSHControlPath(args []string, params sessionParams) []string {
 	opt := "-o ControlPath=" + params.controlPath
 	out := slices.Clone(args)

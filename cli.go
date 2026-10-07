@@ -44,7 +44,7 @@ func execute(args []string) error {
 
 func newCommand() *cobra.Command {
 	var mode clientMode
-	var mosh bool
+	var mosh, forwardAgent bool
 	var port tcpPort
 	var identity, config string
 	var local, remote forwardValues
@@ -59,7 +59,14 @@ func newCommand() *cobra.Command {
 		if strings.HasPrefix(args[0], "-") || strings.ContainsAny(args[0], "\r\n\t ") {
 			return sessionOptions{}, fmt.Errorf("invalid host %q; use an SSH alias or [user@]host", args[0])
 		}
-		var connOpts, forwards []string
+		var forwards []string
+		connOpts := []string{"-o", "ForwardAgent=no"}
+		if forwardAgent {
+			if err := checkLocalAgent(); err != nil {
+				return sessionOptions{}, err
+			}
+			connOpts[1] = "ForwardAgent=yes"
+		}
 		if port != 0 {
 			connOpts = append(connOpts, "-p", port.String())
 		}
@@ -91,7 +98,7 @@ func newCommand() *cobra.Command {
 			// Both transports use SSH-style remote shell command semantics.
 			clientArgs = []string{args[0], "sh", "-c", strings.Join(args[1:], " ")}
 		}
-		return sessionOptions{mode: mode, args: clientArgs, forwards: forwards, connOpts: connOpts}, nil
+		return sessionOptions{mode: mode, args: clientArgs, forwards: forwards, connOpts: connOpts, forwardAgent: forwardAgent}, nil
 	}
 
 	hostRequired := func(cmd *cobra.Command, args []string) error {
@@ -117,6 +124,7 @@ func newCommand() *cobra.Command {
 	flags := root.PersistentFlags()
 	flags.Var(&mode, "transport", "Terminal transport: ssh or mosh")
 	flags.BoolVar(&mosh, "mosh", false, "Use mosh (shorthand for --transport mosh)")
+	flags.BoolVarP(&forwardAgent, "forward-agent", "A", false, "Forward the local SSH agent for the session lifetime (disabled by default)")
 	flags.VarP(&port, "port", "p", "Connection port for SSH (otherwise use SSH configuration)")
 	flags.StringVarP(&identity, "identity", "i", "", "Identity file for SSH in either transport")
 	flags.StringVarP(&config, "config", "F", "", "Configuration file for SSH in either transport")

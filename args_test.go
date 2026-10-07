@@ -196,7 +196,7 @@ func TestWithRemoteEnvMosh(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := withRemoteEnvMosh(tt.in, "tok123")
+			got, err := withRemoteEnvMosh(tt.in, sessionParams{token: "tok123"})
 			if tt.wantErr != "" {
 				require.EqualError(t, err, tt.wantErr)
 				return
@@ -211,13 +211,13 @@ func TestWithRemoteEnvMosh(t *testing.T) {
 }
 
 func TestWithRemoteEnvMoshCommandTail(t *testing.T) {
-	got, err := withRemoteEnvMosh([]string{"user@host", "tmux", "a"}, "tok123")
+	got, err := withRemoteEnvMosh([]string{"user@host", "tmux", "a"}, sessionParams{token: "tok123"})
 	require.NoError(t, err)
 	// ... sh -c '<prefix>exec "$@"' sh tmux a
 	assert.Equal(t, []string{"sh", "tmux", "a"}, got[len(got)-3:])
 	assert.Contains(t, got[len(got)-4], `exec "$@"`)
 
-	got, err = withRemoteEnvMosh([]string{"user@host"}, "tok123")
+	got, err = withRemoteEnvMosh([]string{"user@host"}, sessionParams{token: "tok123"})
 	require.NoError(t, err)
 	assert.Contains(t, got[len(got)-1], `exec "${SHELL:-/bin/sh}" -l`)
 }

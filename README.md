@@ -63,6 +63,30 @@ Repeat `-L` or `-R` for multiple forwards, or use combined forms such as `-L8080
 Ports must be between 1 and 65535.
 Unix socket forwards, dynamic port allocation, and arbitrary native transport flags are not supported.
 
+## SSH agent forwarding
+
+Enable agent forwarding with `-A` or `--forward-agent` in either transport:
+
+```sh
+slush -A user@host
+slush --transport mosh -A -L 8080 user@host
+slush validate -A user@host
+```
+
+Agent forwarding is disabled by default, even if SSH configuration enables it.
+Slush checks the local agent before connecting and checks the remote socket during setup.
+The held SSH connection keeps that socket usable after mosh bootstrap exits.
+Mosh's default address discovery uses a separate bootstrap connection.
+Slush gives the mosh session the held connection's socket instead of the short-lived bootstrap socket.
+The socket and TCP forwards are removed when the held connection closes.
+An empty local agent is valid, so you can load keys during the session.
+
+Agent forwarding requires a local SSH agent and `ssh-add`.
+The server must permit `AllowAgentForwarding`.
+Validation also needs `ssh-add` on the remote machine.
+Forward only to trusted hosts because remote programs can request signatures from your local agent.
+Slush does not copy private keys to the server.
+
 ## Clipboard and open
 
 On the remote, the usual names all forward to your local machine:

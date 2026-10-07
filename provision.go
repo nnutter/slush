@@ -149,8 +149,8 @@ func sshExec(sshPath, host, script string, stdin *strings.Reader, extra []string
 	return string(out), nil
 }
 
-// shellQuote renders s safe as one shell word; only used for
-// slush-generated hex and version constants, never user data.
+// shellQuote renders s as one POSIX shell word, including paths supplied by
+// the user or the remote server.
 func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }

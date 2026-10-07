@@ -31,7 +31,10 @@ ENV = dict(os.environ, TERM="xterm", E2E_ROOT=str(ROOT))
 BIN = ROOT / "bin"
 BIN.mkdir()
 SSH = shutil.which("ssh")
-(BIN / "ssh").write_text("#!/bin/sh\nexec " + shlex.quote(SSH) + " -F " + shlex.quote(CONFIG) + ' "$@"\n')
+(BIN / "ssh").write_text(
+    "#!/bin/sh\ncase \"$*\" in *mosh-server*) printf '%s\\n' \"$$\" >> "
+    + shlex.quote(str(ROOT / 'bootstrap-pids')) + ' ;; esac\nexec '
+    + shlex.quote(SSH) + " -F " + shlex.quote(CONFIG) + ' "$@"\n')
 (BIN / "ssh").chmod(0o755)
 ENV["PATH"] = str(BIN) + os.pathsep + ENV["PATH"]
 ENV["WAYLAND_DISPLAY"] = "e2e"
@@ -119,7 +122,9 @@ def terminal(argv, timeout, tick=None, shell_input=None):
                 except BlockingIOError:
                     pass
             if tick:
-                tick(bytes(output), pid)
+                reply = tick(bytes(output), pid)
+                if reply:
+                    pending_input.extend(reply)
             if eof:
                 time.sleep(0.05)
             elif select.select([fd], [], [], 0.1)[0]:
@@ -326,6 +331,86 @@ print('FORWARD_PASS', flush=True)
                              resolved['user'] + '@' + resolved['hostname'],
                              "printf 'OPTIONS_%s\\n' PASS"], 90)
     assert code == 0 and 'OPTIONS_PASS' in output, output
+    # A real agent must sign after mosh's bootstrap SSH has exited.
+    agent_key = ROOT / 'agent-key'
+    subprocess.run(['ssh-keygen', '-q', '-t', 'ed25519', '-f', str(agent_key), '-N', ''],
+                   check=True, timeout=30, stdin=subprocess.DEVNULL)
+    agent_socket = ROOT / 'agent.sock'
+    agent = subprocess.Popen(['ssh-agent', '-D', '-a', str(agent_socket)],
+                             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL)
+    old_socket = ENV.get('SSH_AUTH_SOCK')
+    try:
+        deadline = time.monotonic() + 10
+        while not agent_socket.exists() and time.monotonic() < deadline:
+            assert agent.poll() is None, 'fixture ssh-agent exited'
+            time.sleep(0.05)
+        assert agent_socket.exists(), 'fixture ssh-agent did not start'
+        ENV['SSH_AUTH_SOCK'] = str(agent_socket)
+        subprocess.run(['ssh-add', str(agent_key)], env=ENV, check=True,
+                       timeout=30, stdin=subprocess.DEVNULL)
+        agent_config = ROOT / 'agent-config'
+        agent_config.write_text(Path(CONFIG).read_text() + '\nHost *\n  ForwardAgent yes\n')
+        code, output = terminal([SLUSH, 'validate', '--transport', MODE, '-A', '-F', str(agent_config), HOST], 120)
+        assert code == 0 and 'ok - SSH agent forwarding' in output, output
+        code, output = session(python_command(
+            'import os\nassert not os.environ.get("SSH_AUTH_SOCK")\nprint("AGENT_DISABLED")'),
+            extra=('-F', str(agent_config)))
+        assert code == 0 and 'AGENT_DISABLED' in output, output
+        state = '/tmp/' + ROOT.name + '-agent-state'
+        public_key = agent_key.with_suffix('.pub').read_text()
+        script = ('import os, pathlib, subprocess, sys, tempfile\n'
+                  'print("AGENT_WAIT", flush=True)\n'
+                  'assert sys.stdin.readline().strip() == "continue"\n'
+                  'with tempfile.TemporaryDirectory(prefix="slush-agent-") as folder:\n'
+                  '    key = pathlib.Path(folder) / "key.pub"\n'
+                  '    key.write_text(' + repr(public_key) + ')\n'
+                  '    subprocess.run(["ssh-add", "-T", str(key)], check=True, timeout=10)\n'
+                  'pathlib.Path(' + repr(state) + ').write_text(os.environ["SSH_AUTH_SOCK"])\n'
+                  'print("AGENT_PASS", flush=True)\n')
+        (ROOT / 'bootstrap-pids').unlink(missing_ok=True)
+        released = False
+
+        def after_bootstrap(output, _pid):
+            global released
+            if released or b'AGENT_WAIT' not in output:
+                return
+            if MODE == 'mosh':
+                records = ROOT / 'bootstrap-pids'
+                if not records.exists():
+                    return
+                for bootstrap in records.read_text().splitlines():
+                    try:
+                        os.kill(int(bootstrap), 0)
+                        return
+                    except ProcessLookupError:
+                        pass
+            released = True
+            return b'continue\n'
+
+        code, output = terminal([SLUSH, '--transport', MODE, '-A', '-F', str(agent_config),
+                                 HOST, python_command(script)], 90, tick=after_bootstrap)
+        assert released and code == 0 and 'AGENT_PASS' in output, output
+        cleanup = ('import pathlib, time\nstate = pathlib.Path(' + repr(state) + ')\n'
+                   'socket = pathlib.Path(state.read_text())\nend = time.monotonic() + 5\n'
+                   'while socket.exists() and time.monotonic() < end: time.sleep(0.05)\n'
+                   'assert not socket.exists(), "orphaned remote agent socket"\nstate.unlink()')
+        subprocess.run([SSH, '-F', CONFIG, HOST, python_command(cleanup)],
+                       check=True, timeout=30, stdin=subprocess.DEVNULL)
+        ENV['SSH_AUTH_SOCK'] = str(ROOT / 'missing-agent.sock')
+        code, output = session('true', extra=('-A',))
+        assert code != 0 and 'local ssh agent is unavailable' in output.lower(), output
+    finally:
+        if old_socket is None:
+            ENV.pop('SSH_AUTH_SOCK', None)
+        else:
+            ENV['SSH_AUTH_SOCK'] = old_socket
+        agent.terminate()
+        try:
+            agent.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            agent.kill()
+            agent.wait(timeout=5)
     # A no-command session must preserve forwarding through login startup.
     argv = [SLUSH, '--transport', MODE, HOST]
     code, output = terminal(argv, 60, shell_input=(

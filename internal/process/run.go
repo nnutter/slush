@@ -1,9 +1,17 @@
-package main
+package process
 
 import (
 	"errors"
+	"os"
 	"os/exec"
+
+	"golang.org/x/term"
 )
+
+// StdinIsTerminal reports whether slush's stdin is a terminal.
+func StdinIsTerminal() bool {
+	return term.IsTerminal(int(os.Stdin.Fd()))
+}
 
 func exitCode(err error) int {
 	if err == nil {

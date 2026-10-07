@@ -1,6 +1,6 @@
 //go:build windows
 
-package main
+package process
 
 import (
 	"fmt"
@@ -8,10 +8,10 @@ import (
 	"os/exec"
 )
 
-// runSession runs the remote client (ssh or et) with stdio attached. Windows
+// Run runs the remote client (ssh, mosh, or et) with stdio attached. Windows
 // lacks the Unix TTY process-group handoff used for near-transparent
 // interactive sessions.
-func runSession(binPath string, args []string, _ bool) (int, error) {
+func Run(binPath string, args []string, _ bool) (int, error) {
 	cmd := exec.Command(binPath, args...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout

@@ -6,7 +6,7 @@ import (
 	"os/exec"
 
 	"github.com/nnutter/slush/internal/clipboard"
-	"golang.org/x/term"
+	"github.com/nnutter/slush/internal/process"
 )
 
 // clipboardPort is the application endpoint. Production uses DefaultPort;
@@ -91,7 +91,7 @@ func runSSHSession(args []string, token string) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("ssh not found on PATH: %w", err)
 	}
-	if interactive && stdinIsTerminal() {
+	if interactive && process.StdinIsTerminal() {
 		// A wrapped command is always present now, so ssh would
 		// skip PTY allocation on its own; restore it for shells.
 		clientArgs = append([]string{"-t"}, clientArgs...)
@@ -101,9 +101,4 @@ func runSSHSession(args []string, token string) (int, error) {
 	// explicit master (not auto) keeps concurrent sessions from
 	// stealing each other's forwards.
 	return runTunneledSession(sshPath, host, connOpts, clientArgs, forwards, token, withSSHControlPath)
-}
-
-// stdinIsTerminal reports whether slush's stdin is a terminal.
-func stdinIsTerminal() bool {
-	return term.IsTerminal(int(os.Stdin.Fd()))
 }

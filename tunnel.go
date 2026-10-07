@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/nnutter/slush/internal/process"
 )
 
 const sshTunnelReadyWait = 30 * time.Second
@@ -95,7 +97,7 @@ func runTunneledSession(
 	if prepareArgs != nil {
 		clientArgs = prepareArgs(clientArgs, sessionParams{controlPath: controlPath, token: token})
 	}
-	return runSession(clientPath, clientArgs, clientPath == sshPath)
+	return process.Run(clientPath, clientArgs, clientPath == sshPath)
 }
 
 // establishSession starts the tunnel master and provisions the remote

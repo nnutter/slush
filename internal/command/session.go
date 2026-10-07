@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"os/exec"
 
-	"github.com/nnutter/slush/internal/clipboard"
 	"github.com/nnutter/slush/internal/process"
+	"github.com/nnutter/slush/internal/protocol"
 )
 
-var clipboardPort = clipboard.DefaultPort
+var clipboardPort = protocol.DefaultPort
 
 func runClientWithOptions(options sessionOptions, token string) (int, error) {
 	if options.mode == modeMosh {

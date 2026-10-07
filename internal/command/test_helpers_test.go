@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nnutter/slush/internal/clipboard"
+	"github.com/nnutter/slush/internal/protocol"
 	"github.com/stretchr/testify/require"
 )
 
@@ -53,14 +53,14 @@ func writeFakeClipTool(t *testing.T, dir, name, body string) {
 }
 
 func ensureClipboardPortFree() error {
-	return clipboard.EnsurePortFree(clipboardPort)
+	return protocol.EnsurePortFree(clipboardPort)
 }
 
 func requirePortFree(t *testing.T, port int) {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		if clipboard.EnsurePortFree(port) == nil {
+		if protocol.EnsurePortFree(port) == nil {
 			return
 		}
 		time.Sleep(20 * time.Millisecond)

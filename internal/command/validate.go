@@ -18,8 +18,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nnutter/slush/internal/clipboard"
 	"github.com/nnutter/slush/internal/desktop"
+	"github.com/nnutter/slush/internal/protocol"
 )
 
 // validator accumulates check results.
@@ -53,11 +53,11 @@ func runValidateChecksWithOptions(options sessionOptions, token string, out io.W
 		return fmt.Errorf("1 check failed")
 	}
 
-	if err := clipboard.EnsurePortFree(clipboardPort); err != nil {
+	if err := protocol.EnsurePortFree(clipboardPort); err != nil {
 		v.fail("clipboard server", err.Error())
 		return fmt.Errorf("1 check failed")
 	}
-	server, err := clipboard.StartServer(clipboardPort, token)
+	server, err := protocol.StartServer(clipboardPort, token)
 	if err != nil {
 		v.fail("clipboard server", err.Error())
 		return fmt.Errorf("1 check failed")
@@ -124,7 +124,7 @@ func runValidateChecksWithOptions(options sessionOptions, token string, out io.W
 	payloadOut := fmt.Sprintf("slush-validate-%d", time.Now().UnixNano())
 	if _, err := probe(fmt.Sprintf(`printf '%%s' '%s' | pbcopy`, payloadOut)); err != nil {
 		v.fail("copy remote->local", err.Error())
-	} else if pasted, err := clipboard.Paste(clipboardPort, token); err != nil {
+	} else if pasted, err := protocol.Paste(clipboardPort, token); err != nil {
 		v.fail("copy remote->local", err.Error())
 	} else if string(pasted) != payloadOut {
 		v.fail("copy remote->local", fmt.Sprintf("got %q back", pasted))
@@ -134,7 +134,7 @@ func runValidateChecksWithOptions(options sessionOptions, token string, out io.W
 
 	// Round trip local -> remote.
 	payloadIn := fmt.Sprintf("slush-validate-%d", time.Now().UnixNano())
-	if err := clipboard.Copy(clipboardPort, token, []byte(payloadIn)); err != nil {
+	if err := protocol.Copy(clipboardPort, token, []byte(payloadIn)); err != nil {
 		v.fail("paste local->remote", err.Error())
 	} else if pastedOut, err := probe(`pbpaste`); err != nil {
 		v.fail("paste local->remote", err.Error())

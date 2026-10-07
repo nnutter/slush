@@ -1,7 +1,7 @@
 // Local client for the clipboard protocol in server.go. Used by
 // validate to drive round-trips without shelling out.
 
-package clipboard
+package protocol
 
 import (
 	"bufio"

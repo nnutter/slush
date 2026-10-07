@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"charm.land/fang/v2"
-	"github.com/nnutter/slush/internal/clipboard"
+	"github.com/nnutter/slush/internal/protocol"
 	"github.com/spf13/cobra"
 )
 
@@ -155,7 +155,7 @@ func newCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			token, err := clipboard.GenerateToken()
+			token, err := protocol.GenerateToken()
 			if err != nil {
 				return err
 			}
@@ -168,14 +168,14 @@ func newCommand() *cobra.Command {
 }
 
 func executeSession(options sessionOptions) error {
-	token, err := clipboard.GenerateToken()
+	token, err := protocol.GenerateToken()
 	if err != nil {
 		return err
 	}
-	if err := clipboard.EnsurePortFree(clipboardPort); err != nil {
+	if err := protocol.EnsurePortFree(clipboardPort); err != nil {
 		return err
 	}
-	server, err := clipboard.StartServer(clipboardPort, token)
+	server, err := protocol.StartServer(clipboardPort, token)
 	if err != nil {
 		return err
 	}

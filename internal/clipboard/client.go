@@ -1,6 +1,6 @@
 // Local client for the clipboard protocol in server.go. Used by
 // validate to drive round-trips without shelling out.
-package main
+package clipboard
 
 import (
 	"bufio"
@@ -12,9 +12,9 @@ import (
 	"time"
 )
 
-// localClipboardCopy sends data to the local clipboard server.
-func localClipboardCopy(token string, data []byte) error {
-	status, _, err := clipboardCall(token, "COPY", data)
+// Copy sends data to the local clipboard server.
+func Copy(port int, token string, data []byte) error {
+	status, _, err := clipboardCall(port, token, "COPY", data)
 	if err != nil {
 		return err
 	}
@@ -24,9 +24,9 @@ func localClipboardCopy(token string, data []byte) error {
 	return nil
 }
 
-// localClipboardPaste reads back from the local clipboard server.
-func localClipboardPaste(token string) ([]byte, error) {
-	status, body, err := clipboardCall(token, "PASTE", nil)
+// Paste reads back from the local clipboard server.
+func Paste(port int, token string) ([]byte, error) {
+	status, body, err := clipboardCall(port, token, "PASTE", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -36,10 +36,10 @@ func localClipboardPaste(token string) ([]byte, error) {
 	return body, nil
 }
 
-// clipboardCall performs one request against 127.0.0.1:clipboardPort,
+// clipboardCall performs one request against 127.0.0.1:port,
 // returning the response line and any trailing payload.
-func clipboardCall(token, verb string, payload []byte) (string, []byte, error) {
-	conn, err := net.DialTimeout("tcp", "127.0.0.1:"+strconv.Itoa(clipboardPort), 5*time.Second)
+func clipboardCall(port int, token, verb string, payload []byte) (string, []byte, error) {
+	conn, err := net.DialTimeout("tcp", "127.0.0.1:"+strconv.Itoa(port), 5*time.Second)
 	if err != nil {
 		return "", nil, fmt.Errorf("dial clipboard server: %w", err)
 	}

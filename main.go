@@ -5,8 +5,13 @@ import (
 	"os"
 	"os/exec"
 
+	"github.com/nnutter/slush/internal/clipboard"
 	"golang.org/x/term"
 )
+
+// clipboardPort is the application endpoint. Production uses DefaultPort;
+// tests select an ephemeral port for isolated sessions.
+var clipboardPort = clipboard.DefaultPort
 
 func main() {
 	os.Exit(run(os.Args[1:]))
@@ -26,18 +31,18 @@ func run(args []string) int {
 		return runValidate(mode, args[1:])
 	}
 
-	token, err := generateClipboardToken()
+	token, err := clipboard.GenerateToken()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "slush: %v\n", err)
 		return 1
 	}
 
-	if err := ensureClipboardPortFree(); err != nil {
+	if err := clipboard.EnsurePortFree(clipboardPort); err != nil {
 		fmt.Fprintf(os.Stderr, "slush: %v\n", err)
 		return 1
 	}
 
-	server, err := startClipboardServer(token)
+	server, err := clipboard.StartServer(clipboardPort, token)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "slush: %v\n", err)
 		return 1

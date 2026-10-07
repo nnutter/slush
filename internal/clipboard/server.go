@@ -14,7 +14,7 @@
 //
 // The server binds 127.0.0.1 only: the reverse tunnel forwards the
 // remote loopback here, and nothing else needs to reach it.
-package main
+package clipboard
 
 import (
 	"bufio"
@@ -45,7 +45,8 @@ func portIsBound(port int) bool {
 }
 
 const (
-	defaultClipboardPort = 2489
+	// DefaultPort is the loopback port used by slush sessions.
+	DefaultPort = 2489
 
 	clipboardMagic   = "SLUSH1"
 	clipboardVersion = "1"
@@ -60,48 +61,42 @@ const (
 	clipboardIOTimeout = 30 * time.Second
 )
 
-// clipboardPort is the local TCP port the server listens on. Tests may
-// override it; production always uses defaultClipboardPort.
-var clipboardPort = defaultClipboardPort
-
-// clipboardServer is a clipboard forwarding listener. Use
-// startClipboardServer to create one.
-type clipboardServer struct {
+// Server is a clipboard forwarding listener. Use StartServer to create one.
+type Server struct {
 	listener net.Listener
 	token    string
 }
 
-// ensureClipboardPortFree returns an error if the clipboard port cannot
-// be bound. It binds rather than dials so readiness checks can never
-// wedge the server with a half-open connection.
-func ensureClipboardPortFree() error {
-	if portIsBound(clipboardPort) {
-		return fmt.Errorf("clipboard server already running on :%d; stop it before using slush", clipboardPort)
+// EnsurePortFree returns an error if port cannot be bound. It binds rather
+// than dials so readiness checks cannot wedge a half-open connection.
+func EnsurePortFree(port int) error {
+	if portIsBound(port) {
+		return fmt.Errorf("clipboard server already running on :%d; stop it before using slush", port)
 	}
 	return nil
 }
 
-// startClipboardServer listens on 127.0.0.1:clipboardPort and serves
-// the clipboard protocol until Stop is called.
-func startClipboardServer(token string) (*clipboardServer, error) {
-	ln, err := net.Listen("tcp", "127.0.0.1:"+strconv.Itoa(clipboardPort))
+// StartServer listens on 127.0.0.1:port and serves the clipboard protocol
+// until Stop is called.
+func StartServer(port int, token string) (*Server, error) {
+	ln, err := net.Listen("tcp", "127.0.0.1:"+strconv.Itoa(port))
 	if err != nil {
-		return nil, fmt.Errorf("listen clipboard on 127.0.0.1:%d: %w", clipboardPort, err)
+		return nil, fmt.Errorf("listen clipboard on 127.0.0.1:%d: %w", port, err)
 	}
-	server := &clipboardServer{listener: ln, token: token}
+	server := &Server{listener: ln, token: token}
 	go server.serve()
 	return server, nil
 }
 
 // Stop terminates the clipboard server listener.
-func (s *clipboardServer) Stop() {
+func (s *Server) Stop() {
 	if s == nil {
 		return
 	}
 	_ = s.listener.Close()
 }
 
-func (s *clipboardServer) serve() {
+func (s *Server) serve() {
 	for {
 		conn, err := s.listener.Accept()
 		if err != nil {
@@ -112,7 +107,7 @@ func (s *clipboardServer) serve() {
 }
 
 // handle serves a single request on conn and then closes it.
-func (s *clipboardServer) handle(conn net.Conn) {
+func (s *Server) handle(conn net.Conn) {
 	defer conn.Close()
 	_ = conn.SetDeadline(time.Now().Add(clipboardIOTimeout))
 
@@ -224,9 +219,9 @@ func writeResponse(conn net.Conn, response string) {
 	_, _ = fmt.Fprintf(conn, "%s\n", response)
 }
 
-// generateClipboardToken returns a random per-session token so only
-// holders of the wrapped remote environment can drive the server.
-func generateClipboardToken() (string, error) {
+// GenerateToken returns a random per-session token so only holders of
+// the wrapped remote environment can drive the server.
+func GenerateToken() (string, error) {
 	var raw [16]byte
 	if _, err := rand.Read(raw[:]); err != nil {
 		return "", fmt.Errorf("generate token: %w", err)

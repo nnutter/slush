@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nnutter/slush/internal/clipboard"
 	"github.com/nnutter/slush/internal/desktop"
 )
 
@@ -45,7 +46,7 @@ func (v *validator) fail(name, detail string) {
 
 // runValidate validates clipboard forwarding against a remote.
 func runValidate(mode clientMode, args []string) int {
-	token, err := generateClipboardToken()
+	token, err := clipboard.GenerateToken()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "slush: %v\n", err)
 		return 1
@@ -66,11 +67,11 @@ func runValidateChecks(mode clientMode, args []string, token string, out io.Writ
 		return fmt.Errorf("1 check failed")
 	}
 
-	if err := ensureClipboardPortFree(); err != nil {
+	if err := clipboard.EnsurePortFree(clipboardPort); err != nil {
 		v.fail("clipboard server", err.Error())
 		return fmt.Errorf("1 check failed")
 	}
-	server, err := startClipboardServer(token)
+	server, err := clipboard.StartServer(clipboardPort, token)
 	if err != nil {
 		v.fail("clipboard server", err.Error())
 		return fmt.Errorf("1 check failed")
@@ -128,7 +129,7 @@ func runValidateChecks(mode clientMode, args []string, token string, out io.Writ
 	payloadOut := fmt.Sprintf("slush-validate-%d", time.Now().UnixNano())
 	if _, err := probe(fmt.Sprintf(`printf '%%s' '%s' | pbcopy`, payloadOut)); err != nil {
 		v.fail("copy remote->local", err.Error())
-	} else if pasted, err := localClipboardPaste(token); err != nil {
+	} else if pasted, err := clipboard.Paste(clipboardPort, token); err != nil {
 		v.fail("copy remote->local", err.Error())
 	} else if string(pasted) != payloadOut {
 		v.fail("copy remote->local", fmt.Sprintf("got %q back", pasted))
@@ -138,7 +139,7 @@ func runValidateChecks(mode clientMode, args []string, token string, out io.Writ
 
 	// Round trip local -> remote.
 	payloadIn := fmt.Sprintf("slush-validate-%d", time.Now().UnixNano())
-	if err := localClipboardCopy(token, []byte(payloadIn)); err != nil {
+	if err := clipboard.Copy(clipboardPort, token, []byte(payloadIn)); err != nil {
 		v.fail("paste local->remote", err.Error())
 	} else if pastedOut, err := probe(`pbpaste`); err != nil {
 		v.fail("paste local->remote", err.Error())

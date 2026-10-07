@@ -1,4 +1,4 @@
-package main
+package clipboard
 
 import (
 	"bufio"
@@ -74,24 +74,24 @@ func TestParseClipboardHeader(t *testing.T) {
 }
 
 func TestGenerateClipboardToken(t *testing.T) {
-	first, err := generateClipboardToken()
+	first, err := GenerateToken()
 	require.NoError(t, err)
 	assert.Len(t, first, 32)
 
-	second, err := generateClipboardToken()
+	second, err := GenerateToken()
 	require.NoError(t, err)
 	assert.NotEqual(t, first, second)
 }
 
 func TestEnsureClipboardPortFree(t *testing.T) {
 	useEphemeralClipboardPort(t)
-	require.NoError(t, ensureClipboardPortFree())
+	require.NoError(t, EnsurePortFree(clipboardPort))
 
 	ln, err := net.Listen("tcp", "127.0.0.1:"+strconv.Itoa(clipboardPort))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = ln.Close() })
 
-	err = ensureClipboardPortFree()
+	err = EnsurePortFree(clipboardPort)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "already running")
 }

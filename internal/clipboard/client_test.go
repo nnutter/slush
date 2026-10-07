@@ -1,4 +1,4 @@
-package main
+package clipboard
 
 import (
 	"net"
@@ -28,18 +28,18 @@ func TestLocalClipboardRoundTrip(t *testing.T) {
 	t.Setenv("WAYLAND_DISPLAY", "test-display")
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	server, err := startClipboardServer("test-token")
+	server, err := StartServer(clipboardPort, "test-token")
 	require.NoError(t, err)
 	t.Cleanup(server.Stop)
 
 	payload := []byte("local client round trip")
-	require.NoError(t, localClipboardCopy("test-token", payload))
-	got, err := localClipboardPaste("test-token")
+	require.NoError(t, Copy(clipboardPort, "test-token", payload))
+	got, err := Paste(clipboardPort, "test-token")
 	require.NoError(t, err)
 	assert.Equal(t, payload, got)
 
-	require.Error(t, localClipboardCopy("wrong-token", payload))
-	_, err = localClipboardPaste("wrong-token")
+	require.Error(t, Copy(clipboardPort, "wrong-token", payload))
+	_, err = Paste(clipboardPort, "wrong-token")
 	require.Error(t, err)
 }
 
@@ -59,8 +59,8 @@ func TestLocalClipboardServerDown(t *testing.T) {
 	clipboardPort = port
 	t.Cleanup(func() { clipboardPort = previous })
 
-	require.Error(t, localClipboardCopy("test-token", []byte("x")))
-	_, err = localClipboardPaste("test-token")
+	require.Error(t, Copy(clipboardPort, "test-token", []byte("x")))
+	_, err = Paste(clipboardPort, "test-token")
 	require.Error(t, err)
 }
 

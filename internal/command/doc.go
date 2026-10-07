@@ -1,3 +1,3 @@
-// Package command owns the slush CLI and coordinates SSH and mosh sessions.
-// It manages forwarding, remote shim provisioning, validation, and cleanup.
+// Package command owns the slush CLI, help, and error presentation.
+// It parses and validates flags, then passes typed options to session or validate.
 package command

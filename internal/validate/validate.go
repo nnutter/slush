@@ -8,7 +8,7 @@
 // when any check fails. It is the enforcement point for clipboard
 // forwarding: sessions degrade with a warning, validate fails loudly.
 
-package command
+package validate
 
 import (
 	"fmt"
@@ -46,20 +46,25 @@ func (v *validator) fail(name, detail string) {
 	fmt.Fprintf(v.out, "FAIL - %s: %s\n", name, detail)
 }
 
-func runValidateChecksWithOptions(options session.Options, token string, out io.Writer) error {
+// Run checks remote integration using shared session setup and reports results.
+func Run(options session.Options, out io.Writer) error {
+	token, err := protocol.GenerateToken()
+	if err != nil {
+		return err
+	}
 	v := &validator{out: out}
 
-	if err := protocol.EnsurePortFree(clipboardPort); err != nil {
+	if err := protocol.EnsurePortFree(options.ProtocolPort); err != nil {
 		v.fail("clipboard server", err.Error())
 		return fmt.Errorf("1 check failed")
 	}
-	server, err := protocol.StartServer(clipboardPort, token)
+	server, err := protocol.StartServer(options.ProtocolPort, token)
 	if err != nil {
 		v.fail("clipboard server", err.Error())
 		return fmt.Errorf("1 check failed")
 	}
 	defer server.Stop()
-	v.ok(fmt.Sprintf("clipboard server on 127.0.0.1:%d", clipboardPort))
+	v.ok(fmt.Sprintf("clipboard server on 127.0.0.1:%d", options.ProtocolPort))
 
 	_, err = exec.LookPath("ssh")
 	if err != nil {
@@ -97,7 +102,7 @@ func runValidateChecksWithOptions(options session.Options, token string, out io.
 	// Transport: a real TCP dial through the forward. Safe: the
 	// server answers ERR to a bare connect and moves on.
 	transportScript := fmt.Sprintf(`python3 -c 'import socket; socket.create_connection(("127.0.0.1", %d), timeout=5).close(); print("listening")' 2>&1`,
-		clipboardPort)
+		options.ProtocolPort)
 	if transportOut, err := probe(transportScript); err != nil {
 		v.fail("transport", err.Error())
 	} else if strings.TrimSpace(transportOut) != "listening" {
@@ -117,7 +122,7 @@ func runValidateChecksWithOptions(options session.Options, token string, out io.
 	payloadOut := fmt.Sprintf("slush-validate-%d", time.Now().UnixNano())
 	if _, err := probe(fmt.Sprintf(`printf '%%s' '%s' | pbcopy`, payloadOut)); err != nil {
 		v.fail("copy remote->local", err.Error())
-	} else if pasted, err := protocol.Paste(clipboardPort, token); err != nil {
+	} else if pasted, err := protocol.Paste(options.ProtocolPort, token); err != nil {
 		v.fail("copy remote->local", err.Error())
 	} else if string(pasted) != payloadOut {
 		v.fail("copy remote->local", fmt.Sprintf("got %q back", pasted))
@@ -127,7 +132,7 @@ func runValidateChecksWithOptions(options session.Options, token string, out io.
 
 	// Round trip local -> remote.
 	payloadIn := fmt.Sprintf("slush-validate-%d", time.Now().UnixNano())
-	if err := protocol.Copy(clipboardPort, token, []byte(payloadIn)); err != nil {
+	if err := protocol.Copy(options.ProtocolPort, token, []byte(payloadIn)); err != nil {
 		v.fail("paste local->remote", err.Error())
 	} else if pastedOut, err := probe(`pbpaste`); err != nil {
 		v.fail("paste local->remote", err.Error())

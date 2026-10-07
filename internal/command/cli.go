@@ -11,6 +11,7 @@ import (
 	"charm.land/fang/v2"
 	"github.com/nnutter/slush/internal/protocol"
 	"github.com/nnutter/slush/internal/session"
+	checks "github.com/nnutter/slush/internal/validate"
 	"github.com/spf13/cobra"
 )
 
@@ -140,11 +141,7 @@ func newCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			token, err := protocol.GenerateToken()
-			if err != nil {
-				return err
-			}
-			return runValidateChecksWithOptions(request, token, cmd.OutOrStdout())
+			return checks.Run(request, cmd.OutOrStdout())
 		},
 	}
 	validate.Flags().SetInterspersed(false)

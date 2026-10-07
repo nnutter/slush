@@ -157,23 +157,6 @@ func TestRunValidateEndToEndMosh(t *testing.T) {
 	assert.Equal(t, 0, code)
 }
 
-func TestRunValidateEndToEndET(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("emulated remote is a shell script")
-	}
-	if _, err := exec.LookPath("python3"); err != nil {
-		t.Skip("python3 not on PATH")
-	}
-	useEphemeralClipboardPort(t)
-
-	binDir := t.TempDir()
-	writeFakeValidateSSH(t, binDir)
-	validateTestEnv(t, binDir)
-
-	code := run([]string{"--et", "validate", "user@host"})
-	assert.Equal(t, 0, code)
-}
-
 func TestRunValidateUsage(t *testing.T) {
 	useEphemeralClipboardPort(t)
 	code := run([]string{"validate"})

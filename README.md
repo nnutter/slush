@@ -1,6 +1,6 @@
 # slush
 
-`ssh`/`et`/`mosh` wrapper with clipboard and URL forwarding that just
+`ssh`/`mosh` wrapper with clipboard and URL forwarding that just
 works: `slush user@host`, then `pbcopy`, `pbpaste`, and `open` on the
 remote reach your local clipboard and browser.
 
@@ -13,14 +13,9 @@ tunnel and server go with it.
 
 By default `slush` invokes `ssh` with a held ControlMaster plus
 `-R 2489:127.0.0.1:2489`.
-Pass `--et` as the first argument to invoke [Eternal Terminal](https://mistertea.github.io/EternalTerminal/) for the TTY while keeping forwards up with a background `ssh -N` ControlMaster.
-Pass `--mosh` as the first argument to use [mosh](https://mosh.org) for the TTY the same way.
-`--et` and `--mosh` are mutually exclusive.
+Pass `--mosh` as the first argument to use [mosh](https://mosh.org) for the TTY while keeping forwards up with a background `ssh -N` ControlMaster.
 
 Clipboard forwarding needs `python3` on the remote (for the shims).
-`--et` sessions get provisioned shims but no wrapped environment —
-`et` cannot run one — so use the shims by absolute path there, or
-prefer ssh/mosh for the full experience.
 
 ## Port forwards
 
@@ -29,12 +24,11 @@ OpenSSH-style `-L` and `-R` forwards are supported in all modes and always go th
 ```sh
 # Browse a remote service at http://localhost:8080
 slush -L 8080:127.0.0.1:8080 user@host
-slush --et -L 8080:127.0.0.1:8080 user@host
 slush --mosh -L 8080:127.0.0.1:8080 user@host
 ```
 
 Multiple `-L`/`-R` options may be given. Combined forms (`-L8080:127.0.0.1:8080`) work too.
-With `--et`/`--mosh`, those flags are applied on the background ssh tunnel and are not passed to `et`/`mosh`.
+With `--mosh`, those flags are applied on the background ssh tunnel and are not passed to mosh.
 
 ## Clipboard and open
 
@@ -64,7 +58,7 @@ them with your own `-L` forward when the service lives remotely.
 
 ## Validate
 
-`slush [--mosh|--et] validate [host...]` checks the whole path and
+`slush [--mosh] validate [host...]` checks the whole path and
 reports per check (`ok`/`FAIL`) with a nonzero exit on failure:
 
 ```sh
@@ -92,8 +86,7 @@ on this while a slush session is connected:
   Failures answer `ERR <message>`; anything unparsable gets an
   `ERR`, never a hang.
 - The session token is available as `$SLUSH_TOKEN`, and
-  `SLUSH=1` marks a wrapped session. Without them (plain `et`,
-  stray shells), fall back to `~/.cache/slush/slush-env`.
+  `SLUSH=1` marks a wrapped session. Without them (stray shells), fall back to `~/.cache/slush/slush-env`.
 - Detecting slush: send `SLUSH1 x HELLO` and look for the `OK`/`ERR`
   shape, or probe for the listener without handshaking (bind
   attempt, `lsof`, `ss -ltn`). A bare TCP connect is harmless but

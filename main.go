@@ -69,8 +69,6 @@ func runClientWithOptions(options sessionOptions, token string) (int, error) {
 	switch options.mode {
 	case modeMosh:
 		return runMoshSession(options, token)
-	case modeET:
-		return runETSession(options, token)
 	default:
 		return runSSHSession(options, token)
 	}
@@ -96,7 +94,7 @@ func runSSHSession(options sessionOptions, token string) (int, error) {
 		// skip PTY allocation on its own; restore it for shells.
 		clientArgs = append([]string{"-t"}, clientArgs...)
 	}
-	// Like --et/--mosh: forwards ride a held ControlMaster child that
+	// Like --mosh: forwards ride a held ControlMaster child that
 	// cannot outlive slush, and the interactive client reuses it. An
 	// explicit master (not auto) keeps concurrent sessions from
 	// stealing each other's forwards.

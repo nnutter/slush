@@ -15,7 +15,6 @@ type clientMode int
 
 const (
 	modeSSH clientMode = iota
-	modeET
 	modeMosh
 )
 
@@ -27,15 +26,8 @@ func takeModeFlags(args []string) (clientMode, []string, error) {
 	for len(rest) > 0 {
 		switch rest[0] {
 		case "--et":
-			if mode == modeMosh {
-				return 0, nil, fmt.Errorf("--et and --mosh are mutually exclusive")
-			}
-			mode = modeET
-			rest = rest[1:]
+			return 0, nil, fmt.Errorf("--et is no longer supported; use ssh or --mosh")
 		case "--mosh":
-			if mode == modeET {
-				return 0, nil, fmt.Errorf("--et and --mosh are mutually exclusive")
-			}
 			mode = modeMosh
 			rest = rest[1:]
 		default:
@@ -46,9 +38,6 @@ func takeModeFlags(args []string) (clientMode, []string, error) {
 }
 
 func clientBinary(mode clientMode) string {
-	if mode == modeET {
-		return "et"
-	}
 	if mode == modeMosh {
 		return "mosh"
 	}
@@ -303,21 +292,6 @@ func withRemoteEnvMosh(args []string, token string) ([]string, error) {
 	return append(out, tail...), nil
 }
 
-// etDestination returns the [user@]host[:port] operand from et-style args.
-func etDestination(args []string) (string, error) {
-	return destinationHost(args, "et", etFlagTakesArg, func(string) bool { return false })
-}
-
-func destinationHost(
-	args []string,
-	client string,
-	flagTakesArg func(string) bool,
-	isCombinedShort func(string) bool,
-) (string, error) {
-	host, _, err := destinationHostAt(args, client, flagTakesArg, isCombinedShort)
-	return host, err
-}
-
 // destinationHostAt is destinationHost that also reports the host's
 // position so callers can split options from the remote command.
 func destinationHostAt(
@@ -364,48 +338,6 @@ func moshFlagTakesArg(flag string) bool {
 
 func isMoshCombinedShortOpt(arg string) bool {
 	return strings.HasPrefix(arg, "-p") && arg != "-p" && !strings.HasPrefix(arg, "--")
-}
-
-func etFlagTakesArg(flag string) bool {
-	switch flag {
-	case "-c", "--command",
-		"-s", "--serverpath",
-		"-p", "--prefix", "--port",
-		"-t", "--tunnel",
-		"-r", "--reversetunnel",
-		"-j", "--jumphost",
-		"-w", "--keepalive", "--ping-interval",
-		"-x", "--ssh-option",
-		"--log-level", "--loglevel",
-		"--max-log-size", "--max-log-count":
-		return true
-	default:
-		return false
-	}
-}
-
-// sshHostFromETDestination strips an optional ET :port suffix so the remainder
-// is a valid ssh destination ([user@]host).
-func sshHostFromETDestination(dest string) string {
-	userPrefix := ""
-	hostPart := dest
-	if user, host, ok := strings.Cut(dest, "@"); ok {
-		userPrefix = user + "@"
-		hostPart = host
-	}
-
-	if strings.HasPrefix(hostPart, "[") {
-		if idx := strings.LastIndex(hostPart, "]:"); idx >= 0 {
-			return userPrefix + hostPart[:idx+1]
-		}
-		return dest
-	}
-
-	host, _, ok := strings.Cut(hostPart, ":")
-	if !ok {
-		return dest
-	}
-	return userPrefix + host
 }
 
 // withMoshSSHControlPath ensures mosh's bootstrap ssh reuses the ControlMaster

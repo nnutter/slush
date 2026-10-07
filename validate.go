@@ -1,4 +1,4 @@
-// The validate subcommand: `slush [--mosh|--et] validate [host...]`.
+// The validate subcommand: `slush [--mosh] validate [host...]`.
 //
 // Validate connects like a session (tunnel, provisioning) and then
 // runs probes instead of an interactive client: shim version,
@@ -181,7 +181,7 @@ func probeEnvPrefix(token string) string {
 // validateTarget resolves the tunnel host, connection options, and
 // forwards for the validate mode. Probes always run over the ssh
 // tunnel, whatever the session transport. Only ssh mode carries
-// connection options today; mosh/et tunnel limitations match sessions.
+// connection options today; mosh tunnel limitations match sessions.
 func validateTarget(mode clientMode, args []string) (host string, connOpts, forwards []string, err error) {
 	options, err := sessionOptionsFromArgs(mode, args)
 	if err != nil {
@@ -195,12 +195,6 @@ func validateTarget(mode clientMode, args []string) (host string, connOpts, forw
 			return "", nil, nil, err
 		}
 		return host, nil, forwards, nil
-	case modeET:
-		host, err := etDestination(rest)
-		if err != nil {
-			return "", nil, nil, err
-		}
-		return sshHostFromETDestination(host), nil, forwards, nil
 	default:
 		host, err := sshHostOperand(rest)
 		if err != nil {
@@ -214,9 +208,6 @@ func validateTarget(mode clientMode, args []string) (host string, connOpts, forw
 // executing the wrapped shape and inspecting the result.
 func checkSessionEnv(v *validator, mode clientMode, args []string, token string, probe func(string) (string, error)) {
 	switch mode {
-	case modeET:
-		v.skip("session env", "et carries no wrapped environment (shims work by absolute path)")
-		return
 	case modeMosh:
 		wrapped, err := withRemoteEnvMosh([]string{"probehost", "sh", "-c", `printf '%s\n' "$SLUSH" "$SLUSH_TOKEN" "$BROWSER"`}, token)
 		if err != nil {

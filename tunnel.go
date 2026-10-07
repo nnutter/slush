@@ -45,21 +45,6 @@ func runMoshSession(options sessionOptions, token string) (int, error) {
 	return runTunneledSession(moshPath, host, options.connOpts, clientArgs, options.forwards, token, withMoshSSHControlPath)
 }
 
-// runETSession keeps an ssh tunnel up for clipboard and any -L/-R forwards, and
-// runs et for the interactive session. Forwards always use ssh, not et -t/-r.
-func runETSession(options sessionOptions, token string) (int, error) {
-	args := options.args
-	host, err := etDestination(args)
-	if err != nil {
-		return 0, err
-	}
-	etPath, err := exec.LookPath("et")
-	if err != nil {
-		return 0, fmt.Errorf("et not found on PATH: %w", err)
-	}
-	return runTunneledSession(etPath, sshHostFromETDestination(host), options.connOpts, args, options.forwards, token, nil)
-}
-
 // sessionParams carries per-session values into client arg preparation
 // and remote provisioning.
 type sessionParams struct {

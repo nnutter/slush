@@ -78,44 +78,6 @@ func TestRunEndToEndSSHWithLocalForward(t *testing.T) {
 	requirePortFree(t, clipboardPort)
 }
 
-func TestRunEndToEndWithET(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("fake binary helpers are shell scripts")
-	}
-
-	useEphemeralClipboardPort(t)
-
-	binDir := t.TempDir()
-	writeFakeSSHTunnel(t, binDir)
-	writeFakeET(t, binDir)
-	t.Setenv("PATH", binDir)
-
-	require.NoError(t, ensureClipboardPortFree())
-
-	code := run([]string{"--et", "user@host"})
-	assert.Equal(t, 0, code)
-	requirePortFree(t, clipboardPort)
-}
-
-func TestRunEndToEndETWithLocalForward(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("fake binary helpers are shell scripts")
-	}
-
-	useEphemeralClipboardPort(t)
-
-	binDir := t.TempDir()
-	writeFakeSSHTunnel(t, binDir, "-L", "8080:127.0.0.1:8080")
-	writeFakeET(t, binDir)
-	t.Setenv("PATH", binDir)
-
-	require.NoError(t, ensureClipboardPortFree())
-
-	code := run([]string{"--et", "-L", "8080:127.0.0.1:8080", "user@host"})
-	assert.Equal(t, 0, code)
-	requirePortFree(t, clipboardPort)
-}
-
 func TestRunPropagatesSSHExitCode(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("fake binary helpers are shell scripts")
@@ -131,24 +93,6 @@ func TestRunPropagatesSSHExitCode(t *testing.T) {
 
 	code := run([]string{"user@host"})
 	assert.Equal(t, 42, code)
-	requirePortFree(t, clipboardPort)
-}
-
-func TestRunETNotFound(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("fake binary helpers are shell scripts")
-	}
-
-	useEphemeralClipboardPort(t)
-
-	binDir := t.TempDir()
-	writeFakeSSHTunnel(t, binDir)
-	t.Setenv("PATH", binDir)
-
-	require.NoError(t, ensureClipboardPortFree())
-
-	code := run([]string{"--et", "user@host"})
-	assert.Equal(t, 1, code)
 	requirePortFree(t, clipboardPort)
 }
 
@@ -223,19 +167,6 @@ func TestRunMoshMissingHost(t *testing.T) {
 	require.NoError(t, ensureClipboardPortFree())
 
 	code := run([]string{"--mosh", "-p", "60001"})
-	assert.Equal(t, 1, code)
-	requirePortFree(t, clipboardPort)
-}
-
-func TestRunModeFlagsMutuallyExclusive(t *testing.T) {
-	useEphemeralClipboardPort(t)
-
-	binDir := t.TempDir()
-	t.Setenv("PATH", binDir)
-
-	require.NoError(t, ensureClipboardPortFree())
-
-	code := run([]string{"--et", "--mosh", "user@host"})
 	assert.Equal(t, 1, code)
 	requirePortFree(t, clipboardPort)
 }
@@ -552,28 +483,5 @@ echo "unexpected mosh args: $*" >&2
 exit 1
 `
 	path := filepath.Join(dir, "mosh")
-	require.NoError(t, os.WriteFile(path, []byte(script), 0o755))
-}
-
-func writeFakeET(t *testing.T, dir string) {
-	t.Helper()
-	script := `#!/bin/sh
-saw_host=
-for arg in "$@"; do
-  case "$arg" in
-    -L|-R|-L*|-R*|-r|-t|--reversetunnel*|--tunnel*)
-      echo "forwards must not be passed to et: $*" >&2
-      exit 1
-      ;;
-    user@host) saw_host=1 ;;
-  esac
-done
-if [ -n "$saw_host" ]; then
-  exit 0
-fi
-echo "unexpected et args: $*" >&2
-exit 1
-`
-	path := filepath.Join(dir, "et")
 	require.NoError(t, os.WriteFile(path, []byte(script), 0o755))
 }

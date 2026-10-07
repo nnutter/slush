@@ -23,21 +23,14 @@ func TestTakeModeFlags(t *testing.T) {
 			wantRest: []string{"user@host"},
 		},
 		{
-			name:     "leading --et",
-			in:       []string{"--et", "user@host"},
-			wantMode: modeET,
-			wantRest: []string{"user@host"},
+			name:    "retired transport",
+			in:      []string{"--et", "user@host"},
+			wantErr: "--et is no longer supported; use ssh or --mosh",
 		},
 		{
 			name:     "leading --mosh",
 			in:       []string{"--mosh", "user@host"},
 			wantMode: modeMosh,
-			wantRest: []string{"user@host"},
-		},
-		{
-			name:     "repeated leading --et",
-			in:       []string{"--et", "--et", "user@host"},
-			wantMode: modeET,
 			wantRest: []string{"user@host"},
 		},
 		{
@@ -58,16 +51,6 @@ func TestTakeModeFlags(t *testing.T) {
 			wantMode: modeSSH,
 			wantRest: nil,
 		},
-		{
-			name:    "--et then --mosh",
-			in:      []string{"--et", "--mosh", "user@host"},
-			wantErr: "--et and --mosh are mutually exclusive",
-		},
-		{
-			name:    "--mosh then --et",
-			in:      []string{"--mosh", "--et", "user@host"},
-			wantErr: "--et and --mosh are mutually exclusive",
-		},
 	}
 
 	for _, tt := range tests {
@@ -86,7 +69,6 @@ func TestTakeModeFlags(t *testing.T) {
 
 func TestClientBinary(t *testing.T) {
 	assert.Equal(t, "ssh", clientBinary(modeSSH))
-	assert.Equal(t, "et", clientBinary(modeET))
 	assert.Equal(t, "mosh", clientBinary(modeMosh))
 }
 
@@ -555,74 +537,6 @@ func TestMoshDestination(t *testing.T) {
 			}
 			require.NoError(t, err)
 			assert.Equal(t, tt.want, got)
-		})
-	}
-}
-
-func TestETDestination(t *testing.T) {
-	tests := []struct {
-		name    string
-		in      []string
-		want    string
-		wantErr string
-	}{
-		{
-			name: "bare host",
-			in:   []string{"user@host"},
-			want: "user@host",
-		},
-		{
-			name: "host with et port",
-			in:   []string{"user@host:2022"},
-			want: "user@host:2022",
-		},
-		{
-			name: "host after flags",
-			in:   []string{"-p", "2022", "user@host"},
-			want: "user@host",
-		},
-		{
-			name: "after --",
-			in:   []string{"--", "user@host"},
-			want: "user@host",
-		},
-		{
-			name:    "missing",
-			in:      []string{"-p", "2022"},
-			wantErr: "missing et destination host",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := etDestination(tt.in)
-			if tt.wantErr != "" {
-				require.EqualError(t, err, tt.wantErr)
-				return
-			}
-			require.NoError(t, err)
-			assert.Equal(t, tt.want, got)
-		})
-	}
-}
-
-func TestSSHHostFromETDestination(t *testing.T) {
-	tests := []struct {
-		in   string
-		want string
-	}{
-		{in: "host", want: "host"},
-		{in: "user@host", want: "user@host"},
-		{in: "user@host:2022", want: "user@host"},
-		{in: "host:2022", want: "host"},
-		{in: "[::1]", want: "[::1]"},
-		{in: "[::1]:2022", want: "[::1]"},
-		{in: "user@[::1]:2022", want: "user@[::1]"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.in, func(t *testing.T) {
-			assert.Equal(t, tt.want, sshHostFromETDestination(tt.in))
 		})
 	}
 }

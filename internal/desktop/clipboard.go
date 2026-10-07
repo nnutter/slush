@@ -4,6 +4,7 @@
 // the user's local configuration instead of reimplementing desktop
 // integration: pbcopy/pbpaste/open on macOS, wl-copy/wl-paste (with
 // xclip/xsel fallbacks) and xdg-open on Linux.
+
 package desktop
 
 import (

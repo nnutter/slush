@@ -14,6 +14,7 @@
 //
 // The server binds 127.0.0.1 only: the reverse tunnel forwards the
 // remote loopback here, and nothing else needs to reach it.
+
 package clipboard
 
 import (

@@ -6,6 +6,7 @@
 // idempotent and version-checked; the shims speak the clipboard
 // protocol from server.go, so swapping their runtime later needs no
 // protocol change.
+
 package command
 
 import (

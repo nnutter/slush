@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+
+	"github.com/nnutter/slush/internal/remote"
 )
 
 // clipboardReverseTunnel is OpenSSH -R syntax:
@@ -17,23 +19,6 @@ const (
 	modeSSH clientMode = iota
 	modeMosh
 )
-
-// remoteSlushDirExpr is the shell expression for the provisioned
-// slush directory. It must match shim.py's shim_dir.
-const remoteSlushDirExpr = `${XDG_CACHE_HOME:-$HOME/.cache}/slush`
-
-// remoteShimDirExpr is the provisioned shim directory expression.
-const remoteShimDirExpr = `"${XDG_CACHE_HOME:-$HOME/.cache}/slush/bin"`
-
-// remoteEnvPrefix returns a POSIX shell prefix exporting the slush
-// session environment: clipboard token, shim PATH shadow, and BROWSER
-// so gh/git/xdg-open callers reach slush-open. It carries no user
-// data (the token is hex), so callers can safely prepend it to remote
-// commands. The trailing "; " separates it from the command.
-func remoteEnvPrefix(token string) string {
-	return fmt.Sprintf("export SLUSH=1 SLUSH_TOKEN=%s BROWSER=slush-open PATH=%s:$PATH; ",
-		token, remoteShimDirExpr)
-}
 
 // sshHostOperand returns the [user@]host operand from ssh-style args,
 // skipping flags (and their arguments) as well as -L/-R forwards.
@@ -55,12 +40,6 @@ func splitSSHRemoteCommand(args []string) (head, cmd []string, err error) {
 	return slices.Clone(args[:idx+1]), slices.Clone(args[idx+1:]), nil
 }
 
-// Bash login profiles (notably macOS path_helper) can put native tools
-// ahead of the injected PATH. Restore the session environment after those
-// profiles run. Zsh uses startup wrappers via ZDOTDIR for the same reason;
-// other shells retain their usual login startup.
-const interactiveShellCommand = `case "${SHELL:-/bin/sh}" in */bash) exec "$SHELL" --rcfile "${XDG_CACHE_HOME:-$HOME/.cache}/slush/bashrc" -i ;; */zsh) export SLUSH_ZDOTDIR="${ZDOTDIR-}" ZDOTDIR="${XDG_CACHE_HOME:-$HOME/.cache}/slush/zsh"; exec "$SHELL" -l ;; *) exec "${SHELL:-/bin/sh}" -l ;; esac`
-
 // withRemoteEnvSSH wraps the remote command (or a fresh login shell
 // when the user gave none) with the slush session environment.
 // It reports whether the session is interactive (no user command).
@@ -69,12 +48,8 @@ func withRemoteEnvSSH(rest []string, token string) ([]string, bool, error) {
 	if err != nil {
 		return nil, false, err
 	}
-	tail := strings.Join(cmd, " ")
-	interactive := len(cmd) == 0
-	if interactive {
-		tail = interactiveShellCommand
-	}
-	return append(head, remoteEnvPrefix(token)+tail), interactive, nil
+	script, interactive := remote.SSHCommand(cmd, token)
+	return append(head, script), interactive, nil
 }
 
 // sshHostIndex returns the position of the [user@]host operand.
@@ -197,19 +172,8 @@ func withRemoteEnvMosh(args []string, params sessionParams) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	script := remoteEnvPrefix(params.token)
-	if params.agentSocket != "" {
-		script += "export SSH_AUTH_SOCK=" + shellQuote(params.agentSocket) + "; "
-	}
-	tail := []string{}
-	if len(cmd) == 0 {
-		script += interactiveShellCommand
-	} else {
-		script += `exec "$@"`
-		tail = append([]string{"sh"}, cmd...)
-	}
-	out := append(pre, "--", host, "sh", "-c", script)
-	return append(out, tail...), nil
+	out := append(pre, "--", host)
+	return append(out, remote.MoshCommand(cmd, remote.Environment{Token: params.token, AgentSocket: params.agentSocket})...), nil
 }
 
 // destinationHostAt is destinationHost that also reports the host's

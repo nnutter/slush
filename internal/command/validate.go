@@ -20,6 +20,7 @@ import (
 
 	"github.com/nnutter/slush/internal/desktop"
 	"github.com/nnutter/slush/internal/protocol"
+	"github.com/nnutter/slush/internal/remote"
 )
 
 // validator accumulates check results.
@@ -79,7 +80,7 @@ func runValidateChecksWithOptions(options sessionOptions, token string, out io.W
 	v.ok("tunnel with clipboard forward")
 
 	probe := func(script string) (string, error) {
-		return sshExec(sshPath, host, probeEnvPrefix(token)+script, nil,
+		return remote.SSHExec(sshPath, host, probeEnvPrefix(token)+script, nil,
 			append([]string{"-o", "ControlMaster=no", "-S", params.controlPath}, options.connOpts...))
 	}
 
@@ -93,12 +94,12 @@ func runValidateChecksWithOptions(options sessionOptions, token string, out io.W
 	}
 
 	// Shim version: proves provisioning landed.
-	if versionOut, err := probe(`cat ` + remoteSlushDirExpr + `/VERSION 2>/dev/null || echo MISSING`); err != nil {
+	if versionOut, err := probe(`cat ` + remote.DirExpr + `/VERSION 2>/dev/null || echo MISSING`); err != nil {
 		v.fail("shims", err.Error())
-	} else if strings.TrimSpace(versionOut) != shimVersion {
-		v.fail("shims", fmt.Sprintf("remote has %q, want %q", strings.TrimSpace(versionOut), shimVersion))
+	} else if strings.TrimSpace(versionOut) != remote.Version {
+		v.fail("shims", fmt.Sprintf("remote has %q, want %q", strings.TrimSpace(versionOut), remote.Version))
 	} else {
-		v.ok(fmt.Sprintf("shims version %s", shimVersion))
+		v.ok(fmt.Sprintf("shims version %s", remote.Version))
 	}
 
 	// Transport: a real TCP dial through the forward. Safe: the
@@ -170,7 +171,7 @@ func runValidateChecksWithOptions(options sessionOptions, token string, out io.W
 // probes. Unlike the session wrapper it is explicit (not inherited),
 // so checks do not depend on wrapping.
 func probeEnvPrefix(token string) string {
-	return remoteEnvPrefix(token) + fmt.Sprintf("SLUSH_PORT=%d ", clipboardPort)
+	return remote.EnvPrefix(token) + fmt.Sprintf("SLUSH_PORT=%d ", clipboardPort)
 }
 
 // validateTarget resolves the tunnel host. Probes always run over SSH,
@@ -202,9 +203,9 @@ func checkSessionEnv(v *validator, mode clientMode, args []string, token string,
 		script, tail := wrapped[dashIdx+4], wrapped[dashIdx+5:]
 		quotedTail := make([]string, len(tail))
 		for i, arg := range tail {
-			quotedTail[i] = shellQuote(arg)
+			quotedTail[i] = remote.ShellQuote(arg)
 		}
-		script = "sh -c " + shellQuote(script) + " " + strings.Join(quotedTail, " ")
+		script = "sh -c " + remote.ShellQuote(script) + " " + strings.Join(quotedTail, " ")
 		out, err := probe(script)
 		if err != nil {
 			v.fail("session env", err.Error())

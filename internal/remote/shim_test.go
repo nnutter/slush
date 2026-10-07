@@ -1,4 +1,4 @@
-package command
+package remote
 
 import (
 	"bufio"

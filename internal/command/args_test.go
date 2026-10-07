@@ -95,16 +95,6 @@ func TestSSHHostOperand(t *testing.T) {
 	}
 }
 
-func TestRemoteEnvPrefix(t *testing.T) {
-	prefix := remoteEnvPrefix("tok123")
-	assert.Contains(t, prefix, "SLUSH=1")
-	assert.Contains(t, prefix, "SLUSH_TOKEN=tok123")
-	assert.Contains(t, prefix, "BROWSER=slush-open")
-	assert.Contains(t, prefix, "PATH=")
-	assert.Contains(t, prefix, "/slush/bin")
-	assert.True(t, strings.HasSuffix(prefix, "; "))
-}
-
 func TestWithRemoteEnvSSH(t *testing.T) {
 	tests := []struct {
 		name         string

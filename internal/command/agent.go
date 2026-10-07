@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/nnutter/slush/internal/remote"
 )
 
 func checkLocalAgent() error {
@@ -35,7 +37,7 @@ func checkLocalAgent() error {
 // OpenSSH owns this listener for the SSH connection, not the command channel.
 // It therefore remains usable after this check and mosh bootstrap both exit.
 func checkRemoteAgent(sshPath, host, controlPath string) (string, error) {
-	output, err := sshExec(sshPath, host, `test -S "$SSH_AUTH_SOCK" && printf '%s' "$SSH_AUTH_SOCK"`, nil,
+	output, err := remote.SSHExec(sshPath, host, `test -S "$SSH_AUTH_SOCK" && printf '%s' "$SSH_AUTH_SOCK"`, nil,
 		[]string{"-A", "-o", "ControlMaster=no", "-S", controlPath})
 	if err != nil {
 		return "", fmt.Errorf("remote SSH agent is unavailable; check sshd AllowAgentForwarding: %w", err)

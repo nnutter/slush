@@ -1,4 +1,4 @@
-package command
+package remote
 
 import (
 	"os"
@@ -80,8 +80,8 @@ func TestProvisionInstallsWhenStale(t *testing.T) {
 	writeFakeProvisionSSH(t, binDir)
 	provisionTestEnv(t, sshDir)
 
-	params := sessionParams{controlPath: filepath.Join(sshDir, "control"), token: "tok123"}
-	require.NoError(t, provisionRemote(filepath.Join(binDir, "ssh"), "user@host", params))
+	params := Environment{ControlPath: filepath.Join(sshDir, "control"), Token: "tok123", Port: 2489}
+	require.NoError(t, Provision(filepath.Join(binDir, "ssh"), "user@host", params))
 
 	calls := sshCalls(t, sshDir)
 	require.Len(t, calls, 2, "check plus install")
@@ -101,10 +101,10 @@ func TestProvisionSkipsWhenCurrent(t *testing.T) {
 	sshDir := t.TempDir()
 	writeFakeProvisionSSH(t, binDir)
 	provisionTestEnv(t, sshDir)
-	t.Setenv("FAKE_VERSION", shimVersion)
+	t.Setenv("FAKE_VERSION", Version)
 
-	params := sessionParams{controlPath: filepath.Join(sshDir, "control"), token: "tok123"}
-	require.NoError(t, provisionRemote(filepath.Join(binDir, "ssh"), "user@host", params))
+	params := Environment{ControlPath: filepath.Join(sshDir, "control"), Token: "tok123", Port: 2489}
+	require.NoError(t, Provision(filepath.Join(binDir, "ssh"), "user@host", params))
 
 	calls := sshCalls(t, sshDir)
 	require.Len(t, calls, 1, "check only, no install")
@@ -120,8 +120,8 @@ func TestProvisionFailsWithoutPython(t *testing.T) {
 	provisionTestEnv(t, sshDir)
 	t.Setenv("FAKE_NO_PYTHON3", "1")
 
-	params := sessionParams{controlPath: filepath.Join(sshDir, "control"), token: "tok123"}
-	err := provisionRemote(filepath.Join(binDir, "ssh"), "user@host", params)
+	params := Environment{ControlPath: filepath.Join(sshDir, "control"), Token: "tok123", Port: 2489}
+	err := Provision(filepath.Join(binDir, "ssh"), "user@host", params)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "python3")
 }
@@ -131,11 +131,11 @@ func TestProvisionFallsBackWithoutMux(t *testing.T) {
 	sshDir := t.TempDir()
 	writeFakeProvisionSSH(t, binDir)
 	provisionTestEnv(t, sshDir)
-	t.Setenv("FAKE_VERSION", shimVersion)
+	t.Setenv("FAKE_VERSION", Version)
 	t.Setenv("FAKE_MUX_FAIL", "1")
 
-	params := sessionParams{controlPath: filepath.Join(sshDir, "control"), token: "tok123"}
-	require.NoError(t, provisionRemote(filepath.Join(binDir, "ssh"), "user@host", params))
+	params := Environment{ControlPath: filepath.Join(sshDir, "control"), Token: "tok123", Port: 2489}
+	require.NoError(t, Provision(filepath.Join(binDir, "ssh"), "user@host", params))
 
 	calls := sshCalls(t, sshDir)
 	require.Len(t, calls, 2, "mux attempt plus direct fallback")
@@ -150,13 +150,13 @@ func TestProvisionExecError(t *testing.T) {
 	provisionTestEnv(t, sshDir)
 	t.Setenv("FAKE_ALWAYS_FAIL", "1")
 
-	params := sessionParams{controlPath: filepath.Join(sshDir, "control"), token: "tok123"}
-	err := provisionRemote(filepath.Join(binDir, "ssh"), "user@host", params)
+	params := Environment{ControlPath: filepath.Join(sshDir, "control"), Token: "tok123", Port: 2489}
+	err := Provision(filepath.Join(binDir, "ssh"), "user@host", params)
 	require.Error(t, err)
 }
 
 func TestShellQuote(t *testing.T) {
-	assert.Equal(t, "'abc123'", shellQuote("abc123"))
-	assert.Equal(t, "'a'\\''b'", shellQuote("a'b"))
-	assert.Equal(t, "''", shellQuote(""))
+	assert.Equal(t, "'abc123'", ShellQuote("abc123"))
+	assert.Equal(t, "'a'\\''b'", ShellQuote("a'b"))
+	assert.Equal(t, "''", ShellQuote(""))
 }

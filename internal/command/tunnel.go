@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/nnutter/slush/internal/process"
+	"github.com/nnutter/slush/internal/remote"
 )
 
 const sshTunnelReadyWait = 30 * time.Second
@@ -46,7 +47,7 @@ func runMoshSession(options sessionOptions, token string) (int, error) {
 		}
 		quoted := make([]string, len(options.connOpts))
 		for i, option := range options.connOpts {
-			quoted[i] = shellQuote(option)
+			quoted[i] = remote.ShellQuote(option)
 		}
 		// Mosh's default IP discovery disables multiplexing with -S none.
 		// Its short-lived bootstrap must not create a second agent socket.
@@ -125,7 +126,7 @@ func establishSession(sshPath, sshHost string, options sessionOptions, token str
 		os.RemoveAll(dir)
 	}
 
-	if err := provisionRemote(sshPath, sshHost, params); err != nil {
+	if err := remote.Provision(sshPath, sshHost, remote.Environment{ControlPath: params.controlPath, Token: params.token, Port: clipboardPort}); err != nil {
 		fmt.Fprintf(os.Stderr, "slush: clipboard provisioning: %v (continuing without clipboard forwarding)\n", err)
 	}
 	return teardown, params, nil

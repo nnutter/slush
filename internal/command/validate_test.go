@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nnutter/slush/internal/remote"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -137,7 +138,7 @@ func TestRunValidateEndToEnd(t *testing.T) {
 	// Provisioning really landed in the isolated HOME.
 	version, err := os.ReadFile(filepath.Join(os.Getenv("FAKE_HOME"), ".cache", "slush", "VERSION"))
 	require.NoError(t, err)
-	assert.Equal(t, shimVersion, strings.TrimSpace(string(version)))
+	assert.Equal(t, remote.Version, strings.TrimSpace(string(version)))
 }
 
 func TestRunValidateEndToEndMosh(t *testing.T) {

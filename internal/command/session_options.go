@@ -1,4 +1,4 @@
-package main
+package command
 
 // sessionOptions separates shared connection and forwarding options from the
 // arguments used by the selected terminal client.

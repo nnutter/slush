@@ -1,9 +1,13 @@
 package main
 
-import "os"
+import (
+	"os"
+
+	"github.com/nnutter/slush/internal/command"
+)
 
 func main() {
-	if err := execute(os.Args[1:]); err != nil {
-		os.Exit(commandExitCode(err))
+	if err := command.Execute(os.Args[1:]); err != nil {
+		os.Exit(command.ExitCode(err))
 	}
 }

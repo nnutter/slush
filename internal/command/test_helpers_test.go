@@ -1,4 +1,4 @@
-package main
+package command
 
 import (
 	"net"
@@ -15,7 +15,7 @@ import (
 
 // run exercises the real command entry point and maps its error to a status.
 func run(args []string) int {
-	return commandExitCode(execute(args))
+	return ExitCode(Execute(args))
 }
 
 // emptyPath returns a PATH with no usable binaries: an empty dir, plus

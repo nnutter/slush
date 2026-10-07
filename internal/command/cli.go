@@ -1,4 +1,4 @@
-package main
+package command
 
 import (
 	"context"
@@ -22,7 +22,8 @@ func (e remoteExitError) Error() string {
 	return fmt.Sprintf("remote command exited with status %d", e)
 }
 
-func commandExitCode(err error) int {
+// ExitCode maps a command error to the process exit status.
+func ExitCode(err error) int {
 	if err == nil {
 		return 0
 	}
@@ -32,7 +33,8 @@ func commandExitCode(err error) int {
 	return 1
 }
 
-func execute(args []string) error {
+// Execute runs the slush CLI with the supplied arguments.
+func Execute(args []string) error {
 	command := newCommand()
 	command.SetArgs(args)
 	return fang.Execute(context.Background(), command, fang.WithErrorHandler(func(w io.Writer, styles fang.Styles, err error) {

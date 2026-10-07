@@ -7,7 +7,7 @@
 // `ok - <name>` or `FAIL - <name>: <detail>`; the exit code is nonzero
 // when any check fails. It is the enforcement point for clipboard
 // forwarding: sessions degrade with a warning, validate fails loudly.
-package main
+package command
 
 import (
 	"fmt"

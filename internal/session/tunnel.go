@@ -1,4 +1,4 @@
-package command
+package session
 
 import (
 	"fmt"
@@ -126,7 +126,7 @@ func establishSession(sshPath, sshHost string, options sessionOptions, token str
 		os.RemoveAll(dir)
 	}
 
-	if err := remote.Provision(sshPath, sshHost, remote.Environment{ControlPath: params.controlPath, Token: params.token, Port: clipboardPort}); err != nil {
+	if err := remote.Provision(sshPath, sshHost, remote.Environment{ControlPath: params.controlPath, Token: params.token, Port: options.protocolPort}); err != nil {
 		fmt.Fprintf(os.Stderr, "slush: clipboard provisioning: %v (continuing without clipboard forwarding)\n", err)
 	}
 	return teardown, params, nil

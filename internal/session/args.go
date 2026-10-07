@@ -1,4 +1,4 @@
-package command
+package session
 
 import (
 	"fmt"
@@ -12,13 +12,6 @@ import (
 // [bind_address:]port:host:hostport with an implicit bind on the
 // remote side. It carries the clipboard protocol to the local server.
 const clipboardReverseTunnel = "2489:127.0.0.1:2489"
-
-type clientMode int
-
-const (
-	modeSSH clientMode = iota
-	modeMosh
-)
 
 // sshHostOperand returns the [user@]host operand from ssh-style args,
 // skipping flags (and their arguments) as well as -L/-R forwards.

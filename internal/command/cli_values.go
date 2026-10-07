@@ -2,11 +2,11 @@ package command
 
 import (
 	"fmt"
-	"net"
 	"net/netip"
 	"strconv"
 	"strings"
 
+	"github.com/nnutter/slush/internal/session"
 	"github.com/spf13/pflag"
 )
 
@@ -14,6 +14,13 @@ var (
 	_ pflag.Value = (*clientMode)(nil)
 	_ pflag.Value = (*tcpPort)(nil)
 	_ pflag.Value = (*forwardValues)(nil)
+)
+
+type clientMode session.Transport
+
+const (
+	modeSSH  = clientMode(session.SSH)
+	modeMosh = clientMode(session.Mosh)
 )
 
 func (m clientMode) String() string {
@@ -79,9 +86,14 @@ type portForward struct {
 	port        tcpPort
 }
 
-func (f portForward) String() string {
-	return net.JoinHostPort(f.bindAddress, f.listenPort.String()) + ":" + net.JoinHostPort(f.host, f.port.String())
+func (f portForward) configuration() session.Forward {
+	return session.Forward{
+		BindAddress: f.bindAddress, ListenPort: uint16(f.listenPort),
+		DestinationHost: f.host, DestinationPort: uint16(f.port),
+	}
 }
+
+func (f portForward) String() string { return f.configuration().String() }
 
 // forwardValues appends one structured TCP forward per flag occurrence.
 // Commas are not list separators, unlike pflag's StringSlice.
@@ -105,6 +117,14 @@ func (v *forwardValues) String() string {
 }
 
 func (*forwardValues) Type() string { return "forward" }
+
+func (v forwardValues) configuration() []session.Forward {
+	values := make([]session.Forward, len(v))
+	for i, forward := range v {
+		values[i] = forward.configuration()
+	}
+	return values
+}
 
 func parsePortForward(value string) (portForward, error) {
 	fields, err := forwardFields(value)

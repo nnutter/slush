@@ -21,6 +21,7 @@ import (
 	"github.com/nnutter/slush/internal/desktop"
 	"github.com/nnutter/slush/internal/protocol"
 	"github.com/nnutter/slush/internal/remote"
+	"github.com/nnutter/slush/internal/session"
 )
 
 // validator accumulates check results.
@@ -45,14 +46,8 @@ func (v *validator) fail(name, detail string) {
 	fmt.Fprintf(v.out, "FAIL - %s: %s\n", name, detail)
 }
 
-func runValidateChecksWithOptions(options sessionOptions, token string, out io.Writer) error {
+func runValidateChecksWithOptions(options session.Options, token string, out io.Writer) error {
 	v := &validator{out: out}
-
-	host, err := validateTarget(options)
-	if err != nil {
-		v.fail("target", err.Error())
-		return fmt.Errorf("1 check failed")
-	}
 
 	if err := protocol.EnsurePortFree(clipboardPort); err != nil {
 		v.fail("clipboard server", err.Error())
@@ -66,25 +61,22 @@ func runValidateChecksWithOptions(options sessionOptions, token string, out io.W
 	defer server.Stop()
 	v.ok(fmt.Sprintf("clipboard server on 127.0.0.1:%d", clipboardPort))
 
-	sshPath, err := exec.LookPath("ssh")
+	_, err = exec.LookPath("ssh")
 	if err != nil {
 		v.fail("tunnel", "ssh not found on PATH")
 		return fmt.Errorf("1 check failed")
 	}
-	teardown, params, err := establishSession(sshPath, host, options, token)
+	connection, err := session.Open(options, token)
 	if err != nil {
 		v.fail("tunnel", err.Error())
 		return fmt.Errorf("1 check failed")
 	}
-	defer teardown()
+	defer connection.Close()
 	v.ok("tunnel with clipboard forward")
 
-	probe := func(script string) (string, error) {
-		return remote.SSHExec(sshPath, host, probeEnvPrefix(token)+script, nil,
-			append([]string{"-o", "ControlMaster=no", "-S", params.controlPath}, options.connOpts...))
-	}
+	probe := connection.Probe
 
-	if options.forwardAgent {
+	if options.ForwardAgent {
 		output, err := probe(`test -S "$SSH_AUTH_SOCK" && { ssh-add -l >/dev/null 2>&1; agent_status=$?; test "$agent_status" -le 1; } && printf agent-ready`)
 		if err != nil || strings.TrimSpace(output) != "agent-ready" {
 			v.fail("SSH agent", fmt.Sprintf("remote agent is unavailable; check sshd AllowAgentForwarding: output %q, error %v", strings.TrimSpace(output), err))
@@ -119,7 +111,7 @@ func runValidateChecksWithOptions(options sessionOptions, token string, out io.W
 	}
 
 	// Session environment: the wrapper each mode injects.
-	checkSessionEnv(v, options.mode, options.args, token, probe)
+	checkSessionEnv(v, connection)
 
 	// Round trip remote -> local.
 	payloadOut := fmt.Sprintf("slush-validate-%d", time.Now().UnixNano())
@@ -167,86 +159,33 @@ func runValidateChecksWithOptions(options sessionOptions, token string, out io.W
 	return nil
 }
 
-// probeEnvPrefix exports the session token, port, and shim PATH for
-// probes. Unlike the session wrapper it is explicit (not inherited),
-// so checks do not depend on wrapping.
-func probeEnvPrefix(token string) string {
-	return remote.EnvPrefix(token) + fmt.Sprintf("SLUSH_PORT=%d ", clipboardPort)
-}
-
-// validateTarget resolves the tunnel host. Probes always run over SSH,
-// whatever the session transport.
-func validateTarget(options sessionOptions) (string, error) {
-	if options.mode == modeMosh {
-		return moshDestination(options.args)
-	}
-	return sshHostOperand(options.args)
-}
-
-// checkSessionEnv verifies the per-mode environment wrapper by
-// executing the wrapped shape and inspecting the result.
-func checkSessionEnv(v *validator, mode clientMode, args []string, token string, probe func(string) (string, error)) {
-	switch mode {
-	case modeMosh:
-		wrapped, err := withRemoteEnvMosh([]string{"probehost", "sh", "-c", `printf '%s\n' "$SLUSH" "$SLUSH_TOKEN" "$BROWSER"`}, sessionParams{token: token})
-		if err != nil {
-			v.fail("session env", err.Error())
-			return
-		}
-		// The wrapper shape is fixed: ... -- host sh -c <script> <tail>.
-		// Run what mosh-server would run: sh -c '<script>' <tail>.
-		dashIdx := indexOf(wrapped, "--")
-		if dashIdx < 0 || len(wrapped) < dashIdx+4 || wrapped[dashIdx+2] != "sh" || wrapped[dashIdx+3] != "-c" {
-			v.fail("session env", "cannot locate wrapper script")
-			return
-		}
-		script, tail := wrapped[dashIdx+4], wrapped[dashIdx+5:]
-		quotedTail := make([]string, len(tail))
-		for i, arg := range tail {
-			quotedTail[i] = remote.ShellQuote(arg)
-		}
-		script = "sh -c " + remote.ShellQuote(script) + " " + strings.Join(quotedTail, " ")
-		out, err := probe(script)
-		if err != nil {
-			v.fail("session env", err.Error())
-			return
-		}
-		verifyEnvOutput(v, out, token)
-	default:
-		wrapped, _, err := withRemoteEnvSSH(append(sshHeadFor(args), `printf '%s\n' "$SLUSH" "$SLUSH_TOKEN" "$BROWSER"`), token)
-		if err != nil {
-			v.fail("session env", err.Error())
-			return
-		}
-		out, err := probe(wrapped[len(wrapped)-1])
-		if err != nil {
-			v.fail("session env", err.Error())
-			return
-		}
-		verifyEnvOutput(v, out, token)
-		// PATH shadow: pbcopy must resolve into the shim dir.
-		whichOut, err := probe(`command -v pbcopy`)
-		if err != nil {
-			v.fail("session env", err.Error())
-			return
-		}
-		if !strings.Contains(whichOut, "/slush/bin/") {
-			v.fail("session env", fmt.Sprintf("pbcopy resolves to %q", strings.TrimSpace(whichOut)))
-			return
-		}
-		v.ok("session env PATH shadow")
-	}
-}
-
-// sshHeadFor rebuilds the options-plus-host head from validate's ssh
-// args so the env check wraps the same shape the session would. A
-// dummy command keeps the split working when the user gave none.
-func sshHeadFor(args []string) []string {
-	head, _, err := splitSSHRemoteCommand(append(args, "true"))
+// checkSessionEnv verifies the transport's wrapper by inspecting its output.
+func checkSessionEnv(v *validator, connection *session.Session) {
+	script, err := connection.WrappedCommand(`printf '%s\n' "$SLUSH" "$SLUSH_TOKEN" "$BROWSER"`)
 	if err != nil {
-		return nil
+		v.fail("session env", err.Error())
+		return
 	}
-	return head
+	out, err := connection.Probe(script)
+	if err != nil {
+		v.fail("session env", err.Error())
+		return
+	}
+	verifyEnvOutput(v, out, connection.Environment().Token)
+	if connection.Transport() == session.Mosh {
+		return
+	}
+	// PATH shadow: pbcopy must resolve into the shim dir.
+	whichOut, err := connection.Probe(`command -v pbcopy`)
+	if err != nil {
+		v.fail("session env", err.Error())
+		return
+	}
+	if !strings.Contains(whichOut, "/slush/bin/") {
+		v.fail("session env", fmt.Sprintf("pbcopy resolves to %q", strings.TrimSpace(whichOut)))
+		return
+	}
+	v.ok("session env PATH shadow")
 }
 
 // verifyEnvOutput checks wrapped printenv output without echoing secrets.
@@ -264,13 +203,4 @@ func redactToken(out, token string) string {
 		return out
 	}
 	return strings.ReplaceAll(out, token, "<token>")
-}
-
-func indexOf(haystack []string, needle string) int {
-	for i, s := range haystack {
-		if s == needle {
-			return i
-		}
-	}
-	return -1
 }

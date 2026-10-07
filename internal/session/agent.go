@@ -1,4 +1,4 @@
-package command
+package session
 
 import (
 	"context"
@@ -11,7 +11,8 @@ import (
 	"github.com/nnutter/slush/internal/remote"
 )
 
-func checkLocalAgent() error {
+// CheckLocalAgent verifies that the requested local agent is accessible.
+func CheckLocalAgent() error {
 	path, err := exec.LookPath("ssh-add")
 	if err != nil {
 		return fmt.Errorf("--forward-agent needs ssh-add to check the local SSH agent: %w", err)

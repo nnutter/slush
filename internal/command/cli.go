@@ -6,13 +6,15 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"slices"
 	"strings"
 
 	"charm.land/fang/v2"
 	"github.com/nnutter/slush/internal/protocol"
+	"github.com/nnutter/slush/internal/session"
 	"github.com/spf13/cobra"
 )
+
+var clipboardPort = protocol.DefaultPort
 
 // remoteExitError carries a completed remote command's exit status. The remote
 // command already owns its diagnostics, so Fang must not print another error.
@@ -51,26 +53,20 @@ func newCommand() *cobra.Command {
 	var identity, config string
 	var local, remote forwardValues
 
-	options := func(cmd *cobra.Command, args []string) (sessionOptions, error) {
+	options := func(cmd *cobra.Command, args []string) (session.Options, error) {
 		if mosh {
 			if cmd.Flags().Changed("transport") {
-				return sessionOptions{}, fmt.Errorf("choose either --transport or --mosh, not both")
+				return session.Options{}, fmt.Errorf("choose either --transport or --mosh, not both")
 			}
 			mode = modeMosh
 		}
 		if strings.HasPrefix(args[0], "-") || strings.ContainsAny(args[0], "\r\n\t ") {
-			return sessionOptions{}, fmt.Errorf("invalid host %q; use an SSH alias or [user@]host", args[0])
+			return session.Options{}, fmt.Errorf("invalid host %q; use an SSH alias or [user@]host", args[0])
 		}
-		var forwards []string
-		connOpts := []string{"-o", "ForwardAgent=no"}
 		if forwardAgent {
-			if err := checkLocalAgent(); err != nil {
-				return sessionOptions{}, err
+			if err := session.CheckLocalAgent(); err != nil {
+				return session.Options{}, err
 			}
-			connOpts[1] = "ForwardAgent=yes"
-		}
-		if port != 0 {
-			connOpts = append(connOpts, "-p", port.String())
 		}
 		for _, option := range []struct{ flag, path string }{{"-i", identity}, {"-F", config}} {
 			if option.path == "" {
@@ -78,29 +74,18 @@ func newCommand() *cobra.Command {
 			}
 			info, err := os.Stat(option.path)
 			if err != nil {
-				return sessionOptions{}, fmt.Errorf("%s file %q: %w", option.flag, option.path, err)
+				return session.Options{}, fmt.Errorf("%s file %q: %w", option.flag, option.path, err)
 			}
 			if !info.Mode().IsRegular() {
-				return sessionOptions{}, fmt.Errorf("%s file %q must be a regular file", option.flag, option.path)
-			}
-			connOpts = append(connOpts, option.flag, option.path)
-		}
-		for _, group := range []struct {
-			flag   string
-			values forwardValues
-		}{{"-L", local}, {"-R", remote}} {
-			for _, forward := range group.values {
-				forwards = append(forwards, group.flag, forward.String())
+				return session.Options{}, fmt.Errorf("%s file %q must be a regular file", option.flag, option.path)
 			}
 		}
-		clientArgs := slices.Clone(args)
-		if mode == modeSSH {
-			clientArgs = slices.Concat(connOpts, clientArgs)
-		} else if len(args) > 1 {
-			// Both transports use SSH-style remote shell command semantics.
-			clientArgs = []string{args[0], "sh", "-c", strings.Join(args[1:], " ")}
-		}
-		return sessionOptions{mode: mode, args: clientArgs, forwards: forwards, connOpts: connOpts, forwardAgent: forwardAgent}, nil
+		return session.Options{
+			Transport: session.Transport(mode), Host: args[0], Command: args[1:],
+			SSHPort: uint16(port), IdentityFile: identity, ConfigFile: config,
+			ForwardAgent: forwardAgent, LocalForwards: local.configuration(),
+			RemoteForwards: remote.configuration(), ProtocolPort: clipboardPort,
+		}, nil
 	}
 
 	hostRequired := func(cmd *cobra.Command, args []string) error {
@@ -167,20 +152,8 @@ func newCommand() *cobra.Command {
 	return root
 }
 
-func executeSession(options sessionOptions) error {
-	token, err := protocol.GenerateToken()
-	if err != nil {
-		return err
-	}
-	if err := protocol.EnsurePortFree(clipboardPort); err != nil {
-		return err
-	}
-	server, err := protocol.StartServer(clipboardPort, token)
-	if err != nil {
-		return err
-	}
-	defer server.Stop()
-	code, err := runClientWithOptions(options, token)
+func executeSession(options session.Options) error {
+	code, err := session.Run(options)
 	if err != nil {
 		return err
 	}

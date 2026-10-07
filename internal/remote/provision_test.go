@@ -66,7 +66,7 @@ func sshCalls(t *testing.T, dir string) []string {
 	}
 	require.NoError(t, err)
 	var calls []string
-	for _, chunk := range strings.Split(string(raw), "=== CALL ===\n") {
+	for chunk := range strings.SplitSeq(string(raw), "=== CALL ===\n") {
 		if strings.TrimSpace(chunk) != "" {
 			calls = append(calls, chunk)
 		}

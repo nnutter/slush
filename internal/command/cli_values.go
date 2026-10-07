@@ -6,8 +6,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/nnutter/slush/internal/session"
 	"github.com/spf13/pflag"
+
+	"github.com/nnutter/slush/internal/session"
 )
 
 var (

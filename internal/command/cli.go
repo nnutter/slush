@@ -9,10 +9,11 @@ import (
 	"strings"
 
 	"charm.land/fang/v2"
+	"github.com/spf13/cobra"
+
 	"github.com/nnutter/slush/internal/protocol"
 	"github.com/nnutter/slush/internal/session"
 	checks "github.com/nnutter/slush/internal/validate"
-	"github.com/spf13/cobra"
 )
 
 var clipboardPort = protocol.DefaultPort

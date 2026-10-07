@@ -9,8 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nnutter/slush/internal/protocol"
 	"github.com/stretchr/testify/require"
+
+	"github.com/nnutter/slush/internal/protocol"
 )
 
 // run exercises the real command entry point and maps its error to a status.

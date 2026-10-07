@@ -109,7 +109,7 @@ func (s *Server) serve() {
 
 // handle serves a single request on conn and then closes it.
 func (s *Server) handle(conn net.Conn) {
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	_ = conn.SetDeadline(time.Now().Add(clipboardIOTimeout))
 
 	reader := bufio.NewReader(conn)

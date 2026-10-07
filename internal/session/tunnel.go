@@ -109,7 +109,8 @@ func establishSession(sshPath, sshHost string, options sessionOptions, token str
 
 	tunnel, err := startSSHTunnel(sshPath, sshHost, controlPath, options.connOpts, options.forwards)
 	if err != nil {
-		os.RemoveAll(dir)
+		// Cleanup must not replace the setup error.
+		_ = os.RemoveAll(dir)
 		return nil, sessionParams{}, err
 	}
 	params := sessionParams{controlPath: controlPath, token: token}
@@ -117,13 +118,14 @@ func establishSession(sshPath, sshHost string, options sessionOptions, token str
 		params.agentSocket, err = checkRemoteAgent(sshPath, sshHost, controlPath)
 		if err != nil {
 			tunnel.Stop()
-			os.RemoveAll(dir)
+			_ = os.RemoveAll(dir)
 			return nil, sessionParams{}, err
 		}
 	}
 	teardown := func() {
 		tunnel.Stop()
-		os.RemoveAll(dir)
+		// Best-effort directory cleanup must not change the client exit status.
+		_ = os.RemoveAll(dir)
 	}
 
 	if err := remote.Provision(sshPath, sshHost, remote.Environment{ControlPath: params.controlPath, Token: params.token, Port: options.protocolPort}); err != nil {

@@ -24,7 +24,8 @@ import (
 	"github.com/nnutter/slush/internal/session"
 )
 
-// validator accumulates check results.
+// validator accumulates check results. Report writes are best effort;
+// output failures must not replace remote integration check results.
 type validator struct {
 	out    io.Writer
 	failed int
@@ -33,17 +34,17 @@ type validator struct {
 
 func (v *validator) ok(name string) {
 	v.passed++
-	fmt.Fprintf(v.out, "ok - %s\n", name)
+	_, _ = fmt.Fprintf(v.out, "ok - %s\n", name)
 }
 
 func (v *validator) skip(name, reason string) {
 	v.passed++
-	fmt.Fprintf(v.out, "ok - %s (skipped: %s)\n", name, reason)
+	_, _ = fmt.Fprintf(v.out, "ok - %s (skipped: %s)\n", name, reason)
 }
 
 func (v *validator) fail(name, detail string) {
 	v.failed++
-	fmt.Fprintf(v.out, "FAIL - %s: %s\n", name, detail)
+	_, _ = fmt.Fprintf(v.out, "FAIL - %s: %s\n", name, detail)
 }
 
 // Run checks remote integration using shared session setup and reports results.
@@ -153,14 +154,14 @@ func Run(options session.Options, out io.Writer) error {
 
 	// Platform report.
 	remoteUname, _ := probe(`uname -sm`)
-	fmt.Fprintf(out, "info - client %s clipboard %s; remote %s\n",
+	_, _ = fmt.Fprintf(out, "info - client %s clipboard %s; remote %s\n",
 		runtime.GOOS, desktop.ClipboardBackendName(), strings.TrimSpace(remoteUname))
 	v.ok("platform report")
 
 	if v.failed > 0 {
 		return fmt.Errorf("%d check(s) failed", v.failed)
 	}
-	fmt.Fprintf(out, "validate: all %d checks passed\n", v.passed)
+	_, _ = fmt.Fprintf(out, "validate: all %d checks passed\n", v.passed)
 	return nil
 }
 

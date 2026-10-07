@@ -42,7 +42,7 @@ func startFakeClipboardServer(t *testing.T, token string, cannedBody []byte) (in
 				return
 			}
 			go func() {
-				defer conn.Close()
+				defer func() { _ = conn.Close() }()
 				_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
 				reader := bufio.NewReader(conn)
 				line, err := reader.ReadString('\n')
@@ -51,14 +51,14 @@ func startFakeClipboardServer(t *testing.T, token string, cannedBody []byte) (in
 				}
 				fields := strings.Fields(strings.TrimSpace(line))
 				if len(fields) < 3 || fields[0] != "SLUSH1" || fields[1] != token {
-					fmt.Fprintf(conn, "ERR unauthorized\n")
+					_, _ = fmt.Fprintf(conn, "ERR unauthorized\n")
 					return
 				}
 				var body []byte
 				if len(fields) == 4 {
 					n, err := strconv.Atoi(fields[3])
 					if err != nil {
-						fmt.Fprintf(conn, "ERR bad length\n")
+						_, _ = fmt.Fprintf(conn, "ERR bad length\n")
 						return
 					}
 					body = make([]byte, n)
@@ -68,11 +68,13 @@ func startFakeClipboardServer(t *testing.T, token string, cannedBody []byte) (in
 				}
 				received <- fakeClipboardRequest{verb: fields[2], body: body}
 				if fields[2] == "PASTE" {
-					fmt.Fprintf(conn, "OK %d\n", len(cannedBody))
-					conn.Write(cannedBody)
+					if _, err := fmt.Fprintf(conn, "OK %d\n", len(cannedBody)); err != nil {
+						return
+					}
+					_, _ = conn.Write(cannedBody)
 					return
 				}
-				fmt.Fprintf(conn, "OK\n")
+				_, _ = fmt.Fprintf(conn, "OK\n")
 			}()
 		}
 	}()

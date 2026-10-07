@@ -8,9 +8,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nnutter/slush/internal/remote"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/nnutter/slush/internal/remote"
 )
 
 // writeFakeValidateSSH installs an ssh stand-in that emulates the

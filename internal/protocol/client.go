@@ -44,7 +44,7 @@ func clipboardCall(port int, token, verb string, payload []byte) (string, []byte
 	if err != nil {
 		return "", nil, fmt.Errorf("dial clipboard server: %w", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	_ = conn.SetDeadline(time.Now().Add(clipboardIOTimeout))
 
 	if payload == nil {

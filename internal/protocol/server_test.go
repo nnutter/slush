@@ -102,7 +102,7 @@ func clipboardExchange(t *testing.T, header string, body []byte) (string, []byte
 	t.Helper()
 	conn, err := net.DialTimeout("tcp", "127.0.0.1:"+strconv.Itoa(clipboardPort), 5*time.Second)
 	require.NoError(t, err)
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
 
 	_, err = fmt.Fprintf(conn, "%s\n", header)

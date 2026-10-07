@@ -67,5 +67,5 @@ func TestLocalClipboardServerDown(t *testing.T) {
 func TestServerErrorText(t *testing.T) {
 	assert.Equal(t, "boom", serverErrorText("ERR boom"))
 	assert.Equal(t, "OK", serverErrorText("OK"))
-	assert.Equal(t, "", serverErrorText(""))
+	assert.Empty(t, serverErrorText(""))
 }

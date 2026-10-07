@@ -58,31 +58,31 @@ func run(args []string) int {
 }
 
 func runClient(mode clientMode, args []string, token string) (int, error) {
-	switch mode {
-	case modeMosh:
-		return runMoshSession(args, token)
-	case modeET:
-		return runETSession(args, token)
-	default:
-		return runSSHSession(args, token)
-	}
-}
-
-func runSSHSession(args []string, token string) (int, error) {
-	forwards, rest, err := takeSSHForwards(args)
+	options, err := sessionOptionsFromArgs(mode, args)
 	if err != nil {
 		return 0, err
 	}
+	return runClientWithOptions(options, token)
+}
+
+func runClientWithOptions(options sessionOptions, token string) (int, error) {
+	switch options.mode {
+	case modeMosh:
+		return runMoshSession(options, token)
+	case modeET:
+		return runETSession(options, token)
+	default:
+		return runSSHSession(options, token)
+	}
+}
+
+func runSSHSession(options sessionOptions, token string) (int, error) {
+	rest := options.args
 	host, err := sshHostOperand(rest)
 	if err != nil {
 		return 0, err
 	}
-	// Connection options ride the tunnel master so non-default
-	// ports, identities, and jumps work; forwards travel separately.
-	connOpts, err := sshConnOpts(rest)
-	if err != nil {
-		return 0, err
-	}
+	// Connection options ride the tunnel master; forwards travel separately.
 	clientArgs, interactive, err := withRemoteEnvSSH(rest, token)
 	if err != nil {
 		return 0, err
@@ -100,5 +100,5 @@ func runSSHSession(args []string, token string) (int, error) {
 	// cannot outlive slush, and the interactive client reuses it. An
 	// explicit master (not auto) keeps concurrent sessions from
 	// stealing each other's forwards.
-	return runTunneledSession(sshPath, host, connOpts, clientArgs, forwards, token, withSSHControlPath)
+	return runTunneledSession(sshPath, host, options.connOpts, clientArgs, options.forwards, token, withSSHControlPath)
 }

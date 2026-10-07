@@ -28,11 +28,8 @@ type sshTunnel struct {
 // runMoshSession keeps an ssh tunnel up for clipboard and any -L/-R forwards,
 // and runs mosh for the interactive session. mosh cannot carry port forwards
 // itself because it tears down its bootstrap ssh connection after start.
-func runMoshSession(args []string, token string) (int, error) {
-	forwards, args, err := takeSSHForwards(args)
-	if err != nil {
-		return 0, err
-	}
+func runMoshSession(options sessionOptions, token string) (int, error) {
+	args := options.args
 	host, err := moshDestination(args)
 	if err != nil {
 		return 0, err
@@ -45,16 +42,13 @@ func runMoshSession(args []string, token string) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("mosh not found on PATH: %w", err)
 	}
-	return runTunneledSession(moshPath, host, nil, clientArgs, forwards, token, withMoshSSHControlPath)
+	return runTunneledSession(moshPath, host, options.connOpts, clientArgs, options.forwards, token, withMoshSSHControlPath)
 }
 
 // runETSession keeps an ssh tunnel up for clipboard and any -L/-R forwards, and
 // runs et for the interactive session. Forwards always use ssh, not et -t/-r.
-func runETSession(args []string, token string) (int, error) {
-	forwards, args, err := takeSSHForwards(args)
-	if err != nil {
-		return 0, err
-	}
+func runETSession(options sessionOptions, token string) (int, error) {
+	args := options.args
 	host, err := etDestination(args)
 	if err != nil {
 		return 0, err
@@ -63,7 +57,7 @@ func runETSession(args []string, token string) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("et not found on PATH: %w", err)
 	}
-	return runTunneledSession(etPath, sshHostFromETDestination(host), nil, args, forwards, token, nil)
+	return runTunneledSession(etPath, sshHostFromETDestination(host), options.connOpts, args, options.forwards, token, nil)
 }
 
 // sessionParams carries per-session values into client arg preparation

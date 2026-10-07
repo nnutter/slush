@@ -183,10 +183,11 @@ func probeEnvPrefix(token string) string {
 // tunnel, whatever the session transport. Only ssh mode carries
 // connection options today; mosh/et tunnel limitations match sessions.
 func validateTarget(mode clientMode, args []string) (host string, connOpts, forwards []string, err error) {
-	forwards, rest, err := takeSSHForwards(args)
+	options, err := sessionOptionsFromArgs(mode, args)
 	if err != nil {
 		return "", nil, nil, err
 	}
+	rest, forwards := options.args, options.forwards
 	switch mode {
 	case modeMosh:
 		host, err := moshDestination(rest)
@@ -205,11 +206,7 @@ func validateTarget(mode clientMode, args []string) (host string, connOpts, forw
 		if err != nil {
 			return "", nil, nil, err
 		}
-		connOpts, err := sshConnOpts(rest)
-		if err != nil {
-			return "", nil, nil, err
-		}
-		return host, connOpts, forwards, nil
+		return host, options.connOpts, forwards, nil
 	}
 }
 

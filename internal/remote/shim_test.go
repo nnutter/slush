@@ -41,44 +41,46 @@ func startFakeClipboardServer(t *testing.T, token string, cannedBody []byte) (in
 			if err != nil {
 				return
 			}
-			go func() {
-				defer func() { _ = conn.Close() }()
-				_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
-				reader := bufio.NewReader(conn)
-				line, err := reader.ReadString('\n')
-				if err != nil {
-					return
-				}
-				fields := strings.Fields(strings.TrimSpace(line))
-				if len(fields) < 3 || fields[0] != "SLUSH1" || fields[1] != token {
-					_, _ = fmt.Fprintf(conn, "ERR unauthorized\n")
-					return
-				}
-				var body []byte
-				if len(fields) == 4 {
-					n, err := strconv.Atoi(fields[3])
-					if err != nil {
-						_, _ = fmt.Fprintf(conn, "ERR bad length\n")
-						return
-					}
-					body = make([]byte, n)
-					if _, err := readExactly(reader, body); err != nil {
-						return
-					}
-				}
-				received <- fakeClipboardRequest{verb: fields[2], body: body}
-				if fields[2] == "PASTE" {
-					if _, err := fmt.Fprintf(conn, "OK %d\n", len(cannedBody)); err != nil {
-						return
-					}
-					_, _ = conn.Write(cannedBody)
-					return
-				}
-				_, _ = fmt.Fprintf(conn, "OK\n")
-			}()
+			go handleFakeClipboardRequest(conn, token, cannedBody, received)
 		}
 	}()
 	return port, received
+}
+
+func handleFakeClipboardRequest(conn net.Conn, token string, cannedBody []byte, received chan fakeClipboardRequest) {
+	defer func() { _ = conn.Close() }()
+	_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
+	reader := bufio.NewReader(conn)
+	line, err := reader.ReadString('\n')
+	if err != nil {
+		return
+	}
+	fields := strings.Fields(strings.TrimSpace(line))
+	if len(fields) < 3 || fields[0] != "SLUSH1" || fields[1] != token {
+		_, _ = fmt.Fprintf(conn, "ERR unauthorized\n")
+		return
+	}
+	var body []byte
+	if len(fields) == 4 {
+		n, err := strconv.Atoi(fields[3])
+		if err != nil {
+			_, _ = fmt.Fprintf(conn, "ERR bad length\n")
+			return
+		}
+		body = make([]byte, n)
+		if _, err := readExactly(reader, body); err != nil {
+			return
+		}
+	}
+	received <- fakeClipboardRequest{verb: fields[2], body: body}
+	if fields[2] == "PASTE" {
+		if _, err := fmt.Fprintf(conn, "OK %d\n", len(cannedBody)); err != nil {
+			return
+		}
+		_, _ = conn.Write(cannedBody)
+		return
+	}
+	_, _ = fmt.Fprintf(conn, "OK\n")
 }
 
 func readExactly(reader *bufio.Reader, buf []byte) (int, error) {

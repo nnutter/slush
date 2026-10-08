@@ -54,9 +54,6 @@ func Open(options Options, token string) (*Session, error) {
 // Close removes forwarding and terminates the held SSH connection.
 func (s *Session) Close() { s.close() }
 
-// Transport reports the selected terminal transport.
-func (s *Session) Transport() Transport { return s.options.mode }
-
 // Environment returns the forwarding credentials and remote socket paths.
 func (s *Session) Environment() remote.Environment {
 	return remote.Environment{
@@ -71,6 +68,9 @@ func (s *Session) Probe(script string) (string, error) {
 	return remote.SSHExec(s.sshPath, s.host, prefix+script, nil,
 		append([]string{"-o", "ControlMaster=no", "-S", s.params.controlPath}, s.options.connOpts...))
 }
+
+// Transport reports the selected terminal transport.
+func (s *Session) Transport() Transport { return s.options.mode }
 
 // WrappedCommand prepares a remote shell command with the terminal transport's
 // environment wrapper. It does not execute the command.

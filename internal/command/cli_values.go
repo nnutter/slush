@@ -24,13 +24,6 @@ const (
 	modeMosh = clientMode(session.Mosh)
 )
 
-func (m clientMode) String() string {
-	if m == modeMosh {
-		return "mosh"
-	}
-	return "ssh"
-}
-
 func (m *clientMode) Set(value string) error {
 	switch value {
 	case "ssh":
@@ -43,16 +36,16 @@ func (m *clientMode) Set(value string) error {
 	return nil
 }
 
+func (m clientMode) String() string {
+	if m == modeMosh {
+		return "mosh"
+	}
+	return "ssh"
+}
+
 func (*clientMode) Type() string { return "transport" }
 
 type tcpPort uint16
-
-func (p tcpPort) String() string {
-	if p == 0 {
-		return ""
-	}
-	return strconv.Itoa(int(p))
-}
 
 func (p *tcpPort) Set(value string) error {
 	if !decimal(value) {
@@ -64,6 +57,13 @@ func (p *tcpPort) Set(value string) error {
 	}
 	*p = tcpPort(n)
 	return nil
+}
+
+func (p tcpPort) String() string {
+	if p == 0 {
+		return ""
+	}
+	return strconv.Itoa(int(p))
 }
 
 func (*tcpPort) Type() string { return "port" }
@@ -87,14 +87,14 @@ type portForward struct {
 	port        tcpPort
 }
 
+func (f portForward) String() string { return f.configuration().String() }
+
 func (f portForward) configuration() session.Forward {
 	return session.Forward{
 		BindAddress: f.bindAddress, ListenPort: uint16(f.listenPort),
 		DestinationHost: f.host, DestinationPort: uint16(f.port),
 	}
 }
-
-func (f portForward) String() string { return f.configuration().String() }
 
 // forwardValues appends one structured TCP forward per flag occurrence.
 // Commas are not list separators, unlike pflag's StringSlice.

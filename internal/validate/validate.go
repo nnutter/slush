@@ -32,6 +32,11 @@ type validator struct {
 	passed int
 }
 
+func (v *validator) fail(name, detail string) {
+	v.failed++
+	_, _ = fmt.Fprintf(v.out, "FAIL - %s: %s\n", name, detail)
+}
+
 func (v *validator) ok(name string) {
 	v.passed++
 	_, _ = fmt.Fprintf(v.out, "ok - %s\n", name)
@@ -40,11 +45,6 @@ func (v *validator) ok(name string) {
 func (v *validator) skip(name, reason string) {
 	v.passed++
 	_, _ = fmt.Fprintf(v.out, "ok - %s (skipped: %s)\n", name, reason)
-}
-
-func (v *validator) fail(name, detail string) {
-	v.failed++
-	_, _ = fmt.Fprintf(v.out, "FAIL - %s: %s\n", name, detail)
 }
 
 // Run checks remote integration using shared session setup and reports results.

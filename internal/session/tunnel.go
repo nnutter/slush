@@ -174,29 +174,16 @@ func startSSHTunnel(sshPath, host, controlPath string, connOpts, forwards []stri
 	return tunnel, nil
 }
 
-func (t *sshTunnel) waitUntilReady(timeout time.Duration) error {
-	deadline := time.After(timeout)
-	ticker := time.NewTicker(20 * time.Millisecond)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case err := <-t.waitCh:
-			t.noteWait(err)
-			if err != nil {
-				return fmt.Errorf("start ssh tunnel: %w", err)
-			}
-			return fmt.Errorf("start ssh tunnel: ssh exited before becoming ready")
-		case <-deadline:
-			return fmt.Errorf("start ssh tunnel: timed out waiting for control socket")
-		case <-ticker.C:
-			// -O check succeeds only after the master is up; with
-			// ExitOnForwardFailure that includes forward setup.
-			if t.checkMaster() == nil {
-				return nil
-			}
-		}
+// Stop ends the master via ControlMaster and kills the child if needed.
+func (t *sshTunnel) Stop() {
+	if t == nil {
+		return
 	}
+	stopSSHTunnel(t.sshPath, t.host, t.controlPath)
+	if t.cmd != nil && t.cmd.Process != nil {
+		_ = t.cmd.Process.Kill()
+	}
+	_ = t.wait()
 }
 
 func (t *sshTunnel) checkMaster() error {
@@ -221,16 +208,29 @@ func (t *sshTunnel) wait() error {
 	return t.waitErr
 }
 
-// Stop ends the master via ControlMaster and kills the child if needed.
-func (t *sshTunnel) Stop() {
-	if t == nil {
-		return
+func (t *sshTunnel) waitUntilReady(timeout time.Duration) error {
+	deadline := time.After(timeout)
+	ticker := time.NewTicker(20 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case err := <-t.waitCh:
+			t.noteWait(err)
+			if err != nil {
+				return fmt.Errorf("start ssh tunnel: %w", err)
+			}
+			return fmt.Errorf("start ssh tunnel: ssh exited before becoming ready")
+		case <-deadline:
+			return fmt.Errorf("start ssh tunnel: timed out waiting for control socket")
+		case <-ticker.C:
+			// -O check succeeds only after the master is up; with
+			// ExitOnForwardFailure that includes forward setup.
+			if t.checkMaster() == nil {
+				return nil
+			}
+		}
 	}
-	stopSSHTunnel(t.sshPath, t.host, t.controlPath)
-	if t.cmd != nil && t.cmd.Process != nil {
-		_ = t.cmd.Process.Kill()
-	}
-	_ = t.wait()
 }
 
 func stopSSHTunnel(sshPath, host, controlPath string) {

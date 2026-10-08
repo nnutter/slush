@@ -97,16 +97,6 @@ func (s *Server) Stop() {
 	_ = s.listener.Close()
 }
 
-func (s *Server) serve() {
-	for {
-		conn, err := s.listener.Accept()
-		if err != nil {
-			return
-		}
-		go s.handle(conn)
-	}
-}
-
 // handle serves a single request on conn and then closes it.
 func (s *Server) handle(conn net.Conn) {
 	defer func() { _ = conn.Close() }()
@@ -168,6 +158,16 @@ func (s *Server) handle(conn net.Conn) {
 		writeResponse(conn, "OK")
 	default:
 		writeResponse(conn, "ERR unknown verb")
+	}
+}
+
+func (s *Server) serve() {
+	for {
+		conn, err := s.listener.Accept()
+		if err != nil {
+			return
+		}
+		go s.handle(conn)
 	}
 }
 

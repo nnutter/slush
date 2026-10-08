@@ -123,20 +123,15 @@ func (s *Server) handle(conn net.Conn) {
 		return
 	}
 
+	executeClipboardRequest(conn, reader, verb, length)
+}
+
+func executeClipboardRequest(conn net.Conn, reader *bufio.Reader, verb string, length int) {
 	switch verb {
 	case "HELLO":
 		writeResponse(conn, "OK slush-clipboard "+clipboardVersion)
 	case "COPY":
-		body, err := readPayload(reader, length)
-		if err != nil {
-			writeResponse(conn, "ERR "+err.Error())
-			return
-		}
-		if err := desktop.Copy(body); err != nil {
-			writeResponse(conn, "ERR "+err.Error())
-			return
-		}
-		writeResponse(conn, "OK")
+		executeClipboardPayload(conn, reader, length, desktop.Copy)
 	case "PASTE":
 		body, err := desktop.Paste()
 		if err != nil {
@@ -146,19 +141,25 @@ func (s *Server) handle(conn net.Conn) {
 		writeResponse(conn, fmt.Sprintf("OK %d", len(body)))
 		_, _ = conn.Write(body)
 	case "OPEN":
-		target, err := readPayload(reader, length)
-		if err != nil {
-			writeResponse(conn, "ERR "+err.Error())
-			return
-		}
-		if err := desktop.OpenURL(string(target)); err != nil {
-			writeResponse(conn, "ERR "+err.Error())
-			return
-		}
-		writeResponse(conn, "OK")
+		executeClipboardPayload(conn, reader, length, func(target []byte) error {
+			return desktop.OpenURL(string(target))
+		})
 	default:
 		writeResponse(conn, "ERR unknown verb")
 	}
+}
+
+func executeClipboardPayload(conn net.Conn, reader *bufio.Reader, length int, operation func([]byte) error) {
+	body, err := readPayload(reader, length)
+	if err != nil {
+		writeResponse(conn, "ERR "+err.Error())
+		return
+	}
+	if err := operation(body); err != nil {
+		writeResponse(conn, "ERR "+err.Error())
+		return
+	}
+	writeResponse(conn, "OK")
 }
 
 func (s *Server) serve() {

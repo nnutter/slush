@@ -83,74 +83,13 @@ func Run(options session.Options, out io.Writer) error {
 	probe := connection.Probe
 
 	if options.ForwardAgent {
-		output, err := probe(`test -S "$SSH_AUTH_SOCK" && { ssh-add -l >/dev/null 2>&1; agent_status=$?; test "$agent_status" -le 1; } && printf agent-ready`)
-		if err != nil || strings.TrimSpace(output) != "agent-ready" {
-			v.fail("SSH agent", fmt.Sprintf("remote agent is unavailable; check sshd AllowAgentForwarding: output %q, error %v", strings.TrimSpace(output), err))
-		} else {
-			v.ok("SSH agent forwarding")
-		}
+		checkAgent(v, probe)
 	}
-
-	// Shim version: proves provisioning landed.
-	if versionOut, err := probe(`cat ` + remote.DirExpr + `/VERSION 2>/dev/null || echo MISSING`); err != nil {
-		v.fail("shims", err.Error())
-	} else if strings.TrimSpace(versionOut) != remote.Version {
-		v.fail("shims", fmt.Sprintf("remote has %q, want %q", strings.TrimSpace(versionOut), remote.Version))
-	} else {
-		v.ok(fmt.Sprintf("shims version %s", remote.Version))
-	}
-
-	// Transport: a real TCP dial through the forward. Safe: the
-	// server answers ERR to a bare connect and moves on.
-	transportScript := fmt.Sprintf(`python3 -c 'import socket; socket.create_connection(("127.0.0.1", %d), timeout=5).close(); print("listening")' 2>&1`,
-		options.ProtocolPort)
-	if transportOut, err := probe(transportScript); err != nil {
-		v.fail("transport", err.Error())
-	} else if strings.TrimSpace(transportOut) != "listening" {
-		if strings.Contains(transportOut, "No such file") || strings.Contains(transportOut, "not found") {
-			v.skip("transport", "no python3 on remote")
-		} else {
-			v.fail("transport", strings.TrimSpace(transportOut))
-		}
-	} else {
-		v.ok("transport over reverse forward")
-	}
-
-	// Session environment: the wrapper each mode injects.
+	checkShims(v, probe)
+	checkTransport(v, probe, options.ProtocolPort)
 	checkSessionEnv(v, connection)
-
-	// Round trip remote -> local.
-	payloadOut := fmt.Sprintf("slush-validate-%d", time.Now().UnixNano())
-	if _, err := probe(fmt.Sprintf(`printf '%%s' '%s' | pbcopy`, payloadOut)); err != nil {
-		v.fail("copy remote->local", err.Error())
-	} else if pasted, err := protocol.Paste(options.ProtocolPort, token); err != nil {
-		v.fail("copy remote->local", err.Error())
-	} else if string(pasted) != payloadOut {
-		v.fail("copy remote->local", fmt.Sprintf("got %q back", pasted))
-	} else {
-		v.ok("copy remote->local")
-	}
-
-	// Round trip local -> remote.
-	payloadIn := fmt.Sprintf("slush-validate-%d", time.Now().UnixNano())
-	if err := protocol.Copy(options.ProtocolPort, token, []byte(payloadIn)); err != nil {
-		v.fail("paste local->remote", err.Error())
-	} else if pastedOut, err := probe(`pbpaste`); err != nil {
-		v.fail("paste local->remote", err.Error())
-	} else if pastedOut != payloadIn {
-		v.fail("paste local->remote", fmt.Sprintf("got %q back", pastedOut))
-	} else {
-		v.ok("paste local->remote")
-	}
-
-	// Open dry-run: proves arg parsing without opening anything.
-	if openOut, err := probe(`slush-open --dry-run https://example.com/validate`); err != nil {
-		v.fail("open dry-run", err.Error())
-	} else if strings.TrimSpace(openOut) != "OPEN https://example.com/validate" {
-		v.fail("open dry-run", fmt.Sprintf("got %q", strings.TrimSpace(openOut)))
-	} else {
-		v.ok("open dry-run")
-	}
+	checkClipboardRoundTrips(v, probe, options.ProtocolPort, token)
+	checkOpen(v, probe)
 
 	// Platform report.
 	remoteUname, _ := probe(`uname -sm`)
@@ -163,6 +102,81 @@ func Run(options session.Options, out io.Writer) error {
 	}
 	_, _ = fmt.Fprintf(out, "validate: all %d checks passed\n", v.passed)
 	return nil
+}
+
+func checkAgent(v *validator, probe func(string) (string, error)) {
+	output, err := probe(`test -S "$SSH_AUTH_SOCK" && { ssh-add -l >/dev/null 2>&1; agent_status=$?; test "$agent_status" -le 1; } && printf agent-ready`)
+	if err != nil || strings.TrimSpace(output) != "agent-ready" {
+		v.fail("SSH agent", fmt.Sprintf("remote agent is unavailable; check sshd AllowAgentForwarding: output %q, error %v", strings.TrimSpace(output), err))
+	} else {
+		v.ok("SSH agent forwarding")
+	}
+}
+
+func checkShims(v *validator, probe func(string) (string, error)) {
+	// Shim version: proves provisioning landed.
+	if versionOut, err := probe(`cat ` + remote.DirExpr + `/VERSION 2>/dev/null || echo MISSING`); err != nil {
+		v.fail("shims", err.Error())
+	} else if strings.TrimSpace(versionOut) != remote.Version {
+		v.fail("shims", fmt.Sprintf("remote has %q, want %q", strings.TrimSpace(versionOut), remote.Version))
+	} else {
+		v.ok(fmt.Sprintf("shims version %s", remote.Version))
+	}
+}
+
+func checkTransport(v *validator, probe func(string) (string, error), port int) {
+	// Transport: a real TCP dial through the forward. Safe: the
+	// server answers ERR to a bare connect and moves on.
+	transportScript := fmt.Sprintf(`python3 -c 'import socket; socket.create_connection(("127.0.0.1", %d), timeout=5).close(); print("listening")' 2>&1`,
+		port)
+	if transportOut, err := probe(transportScript); err != nil {
+		v.fail("transport", err.Error())
+	} else if strings.TrimSpace(transportOut) != "listening" {
+		if strings.Contains(transportOut, "No such file") || strings.Contains(transportOut, "not found") {
+			v.skip("transport", "no python3 on remote")
+		} else {
+			v.fail("transport", strings.TrimSpace(transportOut))
+		}
+	} else {
+		v.ok("transport over reverse forward")
+	}
+}
+
+func checkClipboardRoundTrips(v *validator, probe func(string) (string, error), port int, token string) {
+	// Round trip remote -> local.
+	payloadOut := fmt.Sprintf("slush-validate-%d", time.Now().UnixNano())
+	if _, err := probe(fmt.Sprintf(`printf '%%s' '%s' | pbcopy`, payloadOut)); err != nil {
+		v.fail("copy remote->local", err.Error())
+	} else if pasted, err := protocol.Paste(port, token); err != nil {
+		v.fail("copy remote->local", err.Error())
+	} else if string(pasted) != payloadOut {
+		v.fail("copy remote->local", fmt.Sprintf("got %q back", pasted))
+	} else {
+		v.ok("copy remote->local")
+	}
+
+	// Round trip local -> remote.
+	payloadIn := fmt.Sprintf("slush-validate-%d", time.Now().UnixNano())
+	if err := protocol.Copy(port, token, []byte(payloadIn)); err != nil {
+		v.fail("paste local->remote", err.Error())
+	} else if pastedOut, err := probe(`pbpaste`); err != nil {
+		v.fail("paste local->remote", err.Error())
+	} else if pastedOut != payloadIn {
+		v.fail("paste local->remote", fmt.Sprintf("got %q back", pastedOut))
+	} else {
+		v.ok("paste local->remote")
+	}
+}
+
+func checkOpen(v *validator, probe func(string) (string, error)) {
+	// Open dry-run: proves arg parsing without opening anything.
+	if openOut, err := probe(`slush-open --dry-run https://example.com/validate`); err != nil {
+		v.fail("open dry-run", err.Error())
+	} else if strings.TrimSpace(openOut) != "OPEN https://example.com/validate" {
+		v.fail("open dry-run", fmt.Sprintf("got %q", strings.TrimSpace(openOut)))
+	} else {
+		v.ok("open dry-run")
+	}
 }
 
 // checkSessionEnv verifies the transport's wrapper by inspecting its output.

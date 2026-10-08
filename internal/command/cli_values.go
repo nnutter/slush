@@ -96,6 +96,36 @@ func (f portForward) configuration() session.Forward {
 	}
 }
 
+func (f *portForward) setDestination(fields []string, value string) error {
+	var err error
+	switch len(fields) {
+	case 1:
+	case 2:
+		if decimal(fields[1]) {
+			return f.setDestinationPort(fields[1])
+		}
+		f.host, err = forwardHost(fields[1])
+	case 3:
+		f.host, err = forwardHost(fields[1])
+		if err == nil && fields[2] != "" {
+			return f.setDestinationPort(fields[2])
+		}
+	default:
+		return fmt.Errorf("too many components in forward %q", value)
+	}
+	if err != nil {
+		return fmt.Errorf("destination host: %w", err)
+	}
+	return nil
+}
+
+func (f *portForward) setDestinationPort(value string) error {
+	if err := f.port.Set(value); err != nil {
+		return fmt.Errorf("destination port: %w", err)
+	}
+	return nil
+}
+
 // forwardValues appends one structured TCP forward per flag occurrence.
 // Commas are not list separators, unlike pflag's StringSlice.
 type forwardValues []portForward
@@ -144,28 +174,8 @@ func parsePortForward(value string) (portForward, error) {
 		return portForward{}, fmt.Errorf("listen port: %w", err)
 	}
 	f.port = f.listenPort
-	switch len(fields) {
-	case 1:
-	case 2:
-		if decimal(fields[1]) {
-			if err := f.port.Set(fields[1]); err != nil {
-				return portForward{}, fmt.Errorf("destination port: %w", err)
-			}
-		} else {
-			f.host, err = forwardHost(fields[1])
-		}
-	case 3:
-		f.host, err = forwardHost(fields[1])
-		if err == nil && fields[2] != "" {
-			if portErr := f.port.Set(fields[2]); portErr != nil {
-				return portForward{}, fmt.Errorf("destination port: %w", portErr)
-			}
-		}
-	default:
-		return portForward{}, fmt.Errorf("too many components in forward %q", value)
-	}
-	if err != nil {
-		return portForward{}, fmt.Errorf("destination host: %w", err)
+	if err := f.setDestination(fields, value); err != nil {
+		return portForward{}, err
 	}
 	return f, nil
 }

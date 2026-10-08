@@ -60,15 +60,19 @@ func hasURLScheme(target string) bool {
 		return false
 	}
 	for i, r := range scheme {
-		valid := r == '+' || r == '-' || r == '.' ||
-			(r >= '0' && r <= '9') ||
-			(r >= 'a' && r <= 'z') ||
-			(r >= 'A' && r <= 'Z')
-		if !valid || (i == 0 && r >= '0' && r <= '9') {
+		if !isURLSchemeCharacter(r) || (i == 0 && isURLSchemeDigit(r)) {
 			return false
 		}
 	}
 	return true
+}
+
+func isURLSchemeCharacter(r rune) bool {
+	return strings.ContainsRune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+.-", r)
+}
+
+func isURLSchemeDigit(r rune) bool {
+	return strings.ContainsRune("0123456789", r)
 }
 
 // ClipboardBackendName names the selected clipboard backend for display.

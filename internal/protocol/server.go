@@ -184,18 +184,9 @@ func parseClipboardHeader(line string) (verb, token string, length int, err erro
 	token = fields[1]
 	verb = fields[2]
 
-	wantLength := verb == "COPY" || verb == "OPEN"
-	if wantLength && len(fields) != 4 {
-		return "", "", 0, fmt.Errorf("malformed header")
-	}
-	if !wantLength && len(fields) != 3 {
-		return "", "", 0, fmt.Errorf("malformed header")
-	}
-	if wantLength {
-		length, err = strconv.Atoi(fields[3])
-		if err != nil || length < 0 || length > maxClipboardPayload {
-			return "", "", 0, fmt.Errorf("bad length")
-		}
+	length, err = clipboardHeaderPayloadLength(verb, fields)
+	if err != nil {
+		return "", "", 0, err
 	}
 	switch verb {
 	case "HELLO", "COPY", "PASTE", "OPEN":
@@ -203,6 +194,25 @@ func parseClipboardHeader(line string) (verb, token string, length int, err erro
 	default:
 		return "", "", 0, fmt.Errorf("unknown verb")
 	}
+}
+
+func clipboardHeaderPayloadLength(verb string, fields []string) (int, error) {
+	wantLength := verb == "COPY" || verb == "OPEN"
+	if wantLength && len(fields) != 4 {
+		return 0, fmt.Errorf("malformed header")
+	}
+	if !wantLength && len(fields) != 3 {
+		return 0, fmt.Errorf("malformed header")
+	}
+	var length int
+	if wantLength {
+		var err error
+		length, err = strconv.Atoi(fields[3])
+		if err != nil || length < 0 || length > maxClipboardPayload {
+			return 0, fmt.Errorf("bad length")
+		}
+	}
+	return length, nil
 }
 
 // readPayload reads exactly n bytes following a request header.

@@ -70,17 +70,8 @@ func newCommand() *cobra.Command {
 				return session.Options{}, err
 			}
 		}
-		for _, option := range []struct{ flag, path string }{{"-i", identity}, {"-F", config}} {
-			if option.path == "" {
-				continue
-			}
-			info, err := os.Stat(option.path)
-			if err != nil {
-				return session.Options{}, fmt.Errorf("%s file %q: %w", option.flag, option.path, err)
-			}
-			if !info.Mode().IsRegular() {
-				return session.Options{}, fmt.Errorf("%s file %q must be a regular file", option.flag, option.path)
-			}
+		if err := validateConnectionFiles(identity, config); err != nil {
+			return session.Options{}, err
 		}
 		return session.Options{
 			Transport: session.Transport(mode), Host: args[0], Command: args[1:],
@@ -90,17 +81,11 @@ func newCommand() *cobra.Command {
 		}, nil
 	}
 
-	hostRequired := func(cmd *cobra.Command, args []string) error {
-		if len(args) == 0 {
-			return fmt.Errorf("missing host; use %s [options] [user@]host", cmd.CommandPath())
-		}
-		return nil
-	}
 	root := &cobra.Command{
 		Use:   "slush [options] [user@]host [command...]",
 		Short: "SSH or mosh sessions with clipboard and URL forwarding",
 		Long:  "Connect with SSH or mosh using the same connection and forwarding options.\nFlags after the host belong to the remote command, not slush.\nForward shorthand: PORT, PORT:PORT, PORT:HOST:PORT, or BIND:PORT:HOST:PORT.\nOmitted addresses mean localhost. A single port is used at both ends.\nBracket IPv6 addresses. Repeat -L or -R for multiple forwards.",
-		Args:  hostRequired,
+		Args:  requireHost,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			request, err := options(cmd, args)
 			if err != nil {
@@ -128,15 +113,7 @@ func newCommand() *cobra.Command {
 	validate := &cobra.Command{
 		Use:   "validate [options] [user@]host",
 		Short: "Check provisioning, clipboard forwarding, and session integration",
-		Args: func(cmd *cobra.Command, args []string) error {
-			if err := hostRequired(cmd, args); err != nil {
-				return err
-			}
-			if len(args) != 1 {
-				return fmt.Errorf("validate accepts one host, not a remote command")
-			}
-			return nil
-		},
+		Args:  requireValidationHost,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			request, err := options(cmd, args)
 			if err != nil {
@@ -148,6 +125,39 @@ func newCommand() *cobra.Command {
 	validate.Flags().SetInterspersed(false)
 	root.AddCommand(validate)
 	return root
+}
+
+func validateConnectionFiles(identity, config string) error {
+	for _, option := range []struct{ flag, path string }{{"-i", identity}, {"-F", config}} {
+		if option.path == "" {
+			continue
+		}
+		info, err := os.Stat(option.path)
+		if err != nil {
+			return fmt.Errorf("%s file %q: %w", option.flag, option.path, err)
+		}
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("%s file %q must be a regular file", option.flag, option.path)
+		}
+	}
+	return nil
+}
+
+func requireHost(cmd *cobra.Command, args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("missing host; use %s [options] [user@]host", cmd.CommandPath())
+	}
+	return nil
+}
+
+func requireValidationHost(cmd *cobra.Command, args []string) error {
+	if err := requireHost(cmd, args); err != nil {
+		return err
+	}
+	if len(args) != 1 {
+		return fmt.Errorf("validate accepts one host, not a remote command")
+	}
+	return nil
 }
 
 func executeSession(options session.Options) error {

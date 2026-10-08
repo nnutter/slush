@@ -68,15 +68,28 @@ func readClipboardResponse(reader *bufio.Reader) (string, []byte, error) {
 	line = strings.TrimSuffix(line, "\n")
 
 	var body []byte
-	if fields := strings.Fields(line); len(fields) == 2 && fields[0] == "OK" {
-		if n, err := strconv.Atoi(fields[1]); err == nil && n >= 0 {
-			body = make([]byte, n)
-			if _, err := io.ReadFull(reader, body); err != nil {
-				return "", nil, fmt.Errorf("read payload: %w", err)
-			}
+	if n, ok := clipboardResponsePayloadLength(line); ok {
+		body = make([]byte, n)
+		if _, err := io.ReadFull(reader, body); err != nil {
+			return "", nil, fmt.Errorf("read payload: %w", err)
 		}
 	}
 	return line, body, nil
+}
+
+func clipboardResponsePayloadLength(line string) (int, bool) {
+	fields := strings.Fields(line)
+	if len(fields) != 2 {
+		return 0, false
+	}
+	if fields[0] != "OK" {
+		return 0, false
+	}
+	n, err := strconv.Atoi(fields[1])
+	if err != nil {
+		return 0, false
+	}
+	return n, n >= 0
 }
 
 // serverErrorText trims the ERR prefix for display.

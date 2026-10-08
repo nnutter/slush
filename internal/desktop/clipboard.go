@@ -56,7 +56,7 @@ func OpenURL(target string) error {
 // ("scheme://...").
 func hasURLScheme(target string) bool {
 	scheme, rest, ok := strings.Cut(target, "://")
-	if !ok || scheme == "" || rest == "" {
+	if !ok || !hasURLSchemeParts(scheme, rest) {
 		return false
 	}
 	for i, r := range scheme {
@@ -65,6 +65,13 @@ func hasURLScheme(target string) bool {
 		}
 	}
 	return true
+}
+
+func hasURLSchemeParts(scheme, rest string) bool {
+	if scheme == "" {
+		return false
+	}
+	return rest != ""
 }
 
 func isURLSchemeCharacter(r rune) bool {

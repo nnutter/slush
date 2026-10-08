@@ -180,7 +180,7 @@ func (t *sshTunnel) Stop() {
 		return
 	}
 	stopSSHTunnel(t.sshPath, t.host, t.controlPath)
-	if t.cmd != nil && t.cmd.Process != nil {
+	if t.hasProcess() {
 		_ = t.cmd.Process.Kill()
 	}
 	_ = t.wait()
@@ -193,6 +193,13 @@ func (t *sshTunnel) checkMaster() error {
 		t.host,
 	)
 	return cmd.Run()
+}
+
+func (t *sshTunnel) hasProcess() bool {
+	if t.cmd == nil {
+		return false
+	}
+	return t.cmd.Process != nil
 }
 
 func (t *sshTunnel) noteWait(err error) {

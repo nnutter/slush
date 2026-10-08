@@ -197,22 +197,42 @@ func parseClipboardHeader(line string) (verb, token string, length int, err erro
 }
 
 func clipboardHeaderPayloadLength(verb string, fields []string) (int, error) {
-	wantLength := verb == "COPY" || verb == "OPEN"
-	if wantLength && len(fields) != 4 {
-		return 0, fmt.Errorf("malformed header")
-	}
-	if !wantLength && len(fields) != 3 {
+	wantLength := clipboardVerbHasPayload(verb)
+	if !hasClipboardHeaderShape(fields, wantLength) {
 		return 0, fmt.Errorf("malformed header")
 	}
 	var length int
 	if wantLength {
 		var err error
 		length, err = strconv.Atoi(fields[3])
-		if err != nil || length < 0 || length > maxClipboardPayload {
+		if err != nil || !validClipboardPayloadLength(length) {
 			return 0, fmt.Errorf("bad length")
 		}
 	}
 	return length, nil
+}
+
+func clipboardVerbHasPayload(verb string) bool {
+	switch verb {
+	case "COPY", "OPEN":
+		return true
+	default:
+		return false
+	}
+}
+
+func hasClipboardHeaderShape(fields []string, wantLength bool) bool {
+	if wantLength {
+		return len(fields) == 4
+	}
+	return len(fields) == 3
+}
+
+func validClipboardPayloadLength(length int) bool {
+	if length < 0 {
+		return false
+	}
+	return length <= maxClipboardPayload
 }
 
 // readPayload reads exactly n bytes following a request header.

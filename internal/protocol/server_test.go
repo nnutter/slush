@@ -118,7 +118,7 @@ func clipboardExchange(t *testing.T, header string, body []byte) (string, []byte
 	line = strings.TrimSuffix(line, "\n")
 
 	var rest []byte
-	if fields := strings.Fields(line); len(fields) == 2 && fields[0] == "OK" {
+	if fields := strings.Fields(line); isPayloadReply(fields) {
 		n, err := strconv.Atoi(fields[1])
 		require.NoError(t, err)
 		rest = make([]byte, n)
@@ -126,6 +126,13 @@ func clipboardExchange(t *testing.T, header string, body []byte) (string, []byte
 		require.NoError(t, err)
 	}
 	return line, rest
+}
+
+func isPayloadReply(fields []string) bool {
+	if len(fields) != 2 {
+		return false
+	}
+	return fields[0] == "OK"
 }
 
 func TestClipboardHello(t *testing.T) {

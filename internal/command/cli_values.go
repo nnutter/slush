@@ -52,11 +52,18 @@ func (p *tcpPort) Set(value string) error {
 		return fmt.Errorf("port %q must be a decimal number between 1 and 65535", value)
 	}
 	n, err := strconv.ParseUint(value, 10, 16)
-	if err != nil || n == 0 {
+	if err != nil || !validTCPPortNumber(n) {
 		return fmt.Errorf("port %q must be between 1 and 65535", value)
 	}
 	*p = tcpPort(n)
 	return nil
+}
+
+func validTCPPortNumber(n uint64) bool {
+	if n == 0 {
+		return false
+	}
+	return n <= 65535
 }
 
 func (p tcpPort) String() string {
@@ -73,7 +80,7 @@ func decimal(value string) bool {
 		return false
 	}
 	for _, r := range value {
-		if r < '0' || r > '9' {
+		if !strings.ContainsRune("0123456789", r) {
 			return false
 		}
 	}
@@ -107,7 +114,7 @@ func (f *portForward) setDestination(fields []string, value string) error {
 		f.host, err = forwardHost(fields[1])
 	case 3:
 		f.host, err = forwardHost(fields[1])
-		if err == nil && fields[2] != "" {
+		if err == nil && hasExplicitDestinationPort(fields) {
 			return f.setDestinationPort(fields[2])
 		}
 	default:
@@ -124,6 +131,10 @@ func (f *portForward) setDestinationPort(value string) error {
 		return fmt.Errorf("destination port: %w", err)
 	}
 	return nil
+}
+
+func hasExplicitDestinationPort(fields []string) bool {
+	return fields[2] != ""
 }
 
 // forwardValues appends one structured TCP forward per flag occurrence.
@@ -186,7 +197,7 @@ func forwardFields(value string) ([]string, error) {
 	for i, r := range value {
 		switch r {
 		case '[':
-			if bracketed || i != start {
+			if !canOpenForwardBracket(bracketed, i, start) {
 				return nil, fmt.Errorf("unexpected '[' in forward %q", value)
 			}
 			bracketed = true
@@ -206,6 +217,13 @@ func forwardFields(value string) ([]string, error) {
 		return nil, fmt.Errorf("missing ']' in forward %q", value)
 	}
 	return append(fields, value[start:]), nil
+}
+
+func canOpenForwardBracket(bracketed bool, index, start int) bool {
+	if bracketed {
+		return false
+	}
+	return index == start
 }
 
 func forwardHost(value string) (string, error) {

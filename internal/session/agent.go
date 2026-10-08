@@ -28,10 +28,14 @@ func CheckLocalAgent() error {
 	}
 	// ssh-add returns 1 for an accessible agent with no identities. Forwarding
 	// that agent is valid: the user can load keys while the session is running.
-	if status, ok := errors.AsType[*exec.ExitError](err); ok && status.ExitCode() == 1 {
+	if status, ok := errors.AsType[*exec.ExitError](err); ok && isEmptyAgent(status) {
 		return nil
 	}
 	return fmt.Errorf("local SSH agent is unavailable: %s; start ssh-agent and check SSH_AUTH_SOCK", strings.TrimSpace(string(output)))
+}
+
+func isEmptyAgent(status *exec.ExitError) bool {
+	return status.ExitCode() == 1
 }
 
 // checkRemoteAgent creates the agent listener through the held ControlMaster.

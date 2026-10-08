@@ -55,7 +55,7 @@ func sshHostIndex(args []string) (int, error) {
 			}
 			return i + 1, nil
 		}
-		if !strings.HasPrefix(arg, "-") || arg == "-" {
+		if !isSSHOption(arg) {
 			if arg == "-" {
 				continue
 			}
@@ -72,6 +72,13 @@ func sshHostIndex(args []string) (int, error) {
 		// single-letter flags; none of them is the host operand.
 	}
 	return 0, fmt.Errorf("missing ssh destination host")
+}
+
+func isSSHOption(arg string) bool {
+	if arg == "-" {
+		return false
+	}
+	return strings.HasPrefix(arg, "-")
 }
 
 // sshFlagTakesArg reports whether an ssh flag consumes the next argument.
@@ -91,7 +98,7 @@ func sshFlagTakesArg(flag string) bool {
 // (-p2222, -luser) that carries its value inline and consumes no
 // further argument.
 func isCombinedSSHFlag(arg string) bool {
-	return len(arg) > 2 && arg[0] == '-' && arg[1] != '-' &&
+	return len(arg) > 2 && strings.HasPrefix(arg, "-") && !strings.HasPrefix(arg, "--") &&
 		sshFlagTakesArg(arg[:2])
 }
 
@@ -116,7 +123,7 @@ func hasSSHForward(args []string, flag, spec string) bool {
 		arg := args[i]
 		switch {
 		case arg == flag:
-			if i+1 < len(args) && args[i+1] == spec {
+			if matchesNextArgument(args, i, spec) {
 				return true
 			}
 			i++
@@ -128,9 +135,25 @@ func hasSSHForward(args []string, flag, spec string) bool {
 }
 
 func isCombinedShortTunnel(arg, flag, tunnel string) bool {
-	return len(arg) > len(flag) &&
-		arg[:len(flag)] == flag &&
-		arg[len(flag):] == tunnel
+	if len(arg) <= len(flag) {
+		return false
+	}
+	after, found := strings.CutPrefix(arg, flag)
+	if !found {
+		return false
+	}
+	return after == tunnel
+}
+
+func hasNextArgument(args []string, index int) bool {
+	return index+1 < len(args)
+}
+
+func matchesNextArgument(args []string, index int, value string) bool {
+	if !hasNextArgument(args, index) {
+		return false
+	}
+	return args[index+1] == value
 }
 
 // moshDestination returns the [user@]host operand from mosh-style args.
@@ -149,10 +172,17 @@ func splitMoshCommand(args []string) (pre []string, host string, cmd []string, e
 		return nil, "", nil, err
 	}
 	pre = slices.Clone(args[:idx])
-	if len(pre) > 0 && pre[len(pre)-1] == "--" {
+	if hasTrailingSeparator(pre) {
 		pre = pre[:len(pre)-1]
 	}
 	return pre, host, slices.Clone(args[idx+1:]), nil
+}
+
+func hasTrailingSeparator(args []string) bool {
+	if len(args) == 0 {
+		return false
+	}
+	return args[len(args)-1] == "--"
 }
 
 // withRemoteEnvMosh rebuilds mosh args with the session environment.
@@ -214,7 +244,11 @@ func moshFlagTakesArg(flag string) bool {
 }
 
 func isMoshCombinedShortOpt(arg string) bool {
-	return strings.HasPrefix(arg, "-p") && arg != "-p" && !strings.HasPrefix(arg, "--")
+	after, found := strings.CutPrefix(arg, "-p")
+	if !found {
+		return false
+	}
+	return after != ""
 }
 
 // withMoshSSHControlPath supplies the held master's path to bootstrap SSH.
@@ -223,7 +257,7 @@ func withMoshSSHControlPath(args []string, params sessionParams) []string {
 	opt := "-o ControlPath=" + params.controlPath
 	out := slices.Clone(args)
 	for i, arg := range out {
-		if arg == "--ssh" && i+1 < len(out) {
+		if arg == "--ssh" && hasNextArgument(out, i) {
 			out[i+1] = out[i+1] + " " + opt
 			return out
 		}

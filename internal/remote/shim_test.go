@@ -56,7 +56,7 @@ func handleFakeClipboardRequest(conn net.Conn, token string, cannedBody []byte, 
 		return
 	}
 	fields := strings.Fields(strings.TrimSpace(line))
-	if len(fields) < 3 || fields[0] != "SLUSH1" || fields[1] != token {
+	if !isAuthenticatedFakeRequest(fields, token) {
 		_, _ = fmt.Fprintf(conn, "ERR unauthorized\n")
 		return
 	}
@@ -81,6 +81,16 @@ func handleFakeClipboardRequest(conn net.Conn, token string, cannedBody []byte, 
 		return
 	}
 	_, _ = fmt.Fprintf(conn, "OK\n")
+}
+
+func isAuthenticatedFakeRequest(fields []string, token string) bool {
+	if len(fields) < 3 {
+		return false
+	}
+	if fields[0] != "SLUSH1" {
+		return false
+	}
+	return fields[1] == token
 }
 
 func readExactly(reader *bufio.Reader, buf []byte) (int, error) {

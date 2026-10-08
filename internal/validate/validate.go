@@ -15,6 +15,7 @@ import (
 	"io"
 	"os/exec"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -106,11 +107,15 @@ func Run(options session.Options, out io.Writer) error {
 
 func checkAgent(v *validator, probe func(string) (string, error)) {
 	output, err := probe(`test -S "$SSH_AUTH_SOCK" && { ssh-add -l >/dev/null 2>&1; agent_status=$?; test "$agent_status" -le 1; } && printf agent-ready`)
-	if err != nil || strings.TrimSpace(output) != "agent-ready" {
+	if err != nil || !isReadyAgent(output) {
 		v.fail("SSH agent", fmt.Sprintf("remote agent is unavailable; check sshd AllowAgentForwarding: output %q, error %v", strings.TrimSpace(output), err))
 	} else {
 		v.ok("SSH agent forwarding")
 	}
+}
+
+func isReadyAgent(output string) bool {
+	return strings.TrimSpace(output) == "agent-ready"
 }
 
 func checkShims(v *validator, probe func(string) (string, error)) {
@@ -211,7 +216,7 @@ func checkSessionEnv(v *validator, connection *session.Session) {
 // verifyEnvOutput checks wrapped printenv output without echoing secrets.
 func verifyEnvOutput(v *validator, out, token string) {
 	lines := strings.Split(strings.TrimSpace(out), "\n")
-	if len(lines) != 3 || lines[0] != "1" || lines[1] != token || lines[2] != "slush-open" {
+	if !slices.Equal(lines, []string{"1", token, "slush-open"}) {
 		v.fail("session env", fmt.Sprintf("unexpected wrapper output %q", redactToken(out, token)))
 		return
 	}

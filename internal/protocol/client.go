@@ -57,7 +57,10 @@ func clipboardCall(port int, token, verb string, payload []byte) (string, []byte
 		}
 	}
 
-	reader := bufio.NewReader(conn)
+	return readClipboardResponse(bufio.NewReader(conn))
+}
+
+func readClipboardResponse(reader *bufio.Reader) (string, []byte, error) {
 	line, err := reader.ReadString('\n')
 	if err != nil {
 		return "", nil, fmt.Errorf("read response: %w", err)

@@ -183,9 +183,7 @@ type fakeSSHSession struct {
 
 func writeFakeSSHSession(t *testing.T, dir string, cfg fakeSSHSession) {
 	t.Helper()
-	if len(cfg.masterForwards)%2 != 0 {
-		t.Fatalf("master forwards must be flag/spec pairs, got %v", cfg.masterForwards)
-	}
+	require.Zero(t, len(cfg.masterForwards)%2, "master forwards must be flag/spec pairs, got %v", cfg.masterForwards)
 
 	var extraChecks strings.Builder
 	for i := 0; i < len(cfg.masterForwards); i += 2 {
@@ -327,9 +325,7 @@ done
 
 func writeFakeSSHTunnel(t *testing.T, dir string, extraForwards ...string) {
 	t.Helper()
-	if len(extraForwards)%2 != 0 {
-		t.Fatalf("extra forwards must be flag/spec pairs, got %v", extraForwards)
-	}
+	require.Zero(t, len(extraForwards)%2, "extra forwards must be flag/spec pairs, got %v", extraForwards)
 
 	var extraChecks strings.Builder
 	for i := 0; i < len(extraForwards); i += 2 {

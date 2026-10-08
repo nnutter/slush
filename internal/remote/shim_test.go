@@ -126,7 +126,7 @@ func runShimName(t *testing.T, name string, args []string, stdin string, env map
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			code = exitErr.ExitCode()
 		} else {
-			t.Fatalf("run shim: %v", err)
+			require.NoError(t, err, "run shim")
 		}
 	}
 	return code, stdout.String(), stderr.String()
@@ -138,7 +138,7 @@ func receiveRequest(t *testing.T, ch chan fakeClipboardRequest) fakeClipboardReq
 	case req := <-ch:
 		return req
 	case <-time.After(5 * time.Second):
-		t.Fatal("timed out waiting for shim request")
+		require.FailNow(t, "timed out waiting for shim request")
 		return fakeClipboardRequest{}
 	}
 }

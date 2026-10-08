@@ -66,5 +66,5 @@ func requirePortFree(t *testing.T, port int) {
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	t.Fatalf(":%d still bound", port)
+	require.FailNowf(t, "clipboard port is still bound", ":%d still bound", port)
 }

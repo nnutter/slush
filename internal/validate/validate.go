@@ -1,4 +1,4 @@
-// The validate subcommand: `slush validate [--transport ssh|mosh] host`.
+// The validate subcommand: `slush validate [--transport auto|ssh|mosh] host`.
 //
 // Validate connects like a session (tunnel, provisioning) and then
 // runs probes instead of an interactive client: shim version,

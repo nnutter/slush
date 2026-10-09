@@ -250,7 +250,7 @@ for token, expected in [('wrong-token', b'ERR'), (os.environ['SLUSH_TOKEN'], b'O
 try:
     # Auto must launch real Mosh when both native binaries are available.
     marker = ROOT / 'mosh-clients'
-    code, output = terminal([SLUSH, '--transport', 'auto', HOST,
+    code, output = terminal([SLUSH, HOST,
                              "printf 'AUTO_AVAILABLE_PASS\\n'"], 90)
     assert code == 0 and 'AUTO_AVAILABLE_PASS' in output and marker.exists(), output
     marker.unlink()
@@ -258,17 +258,17 @@ try:
     code, output = terminal([SLUSH, '--transport', 'ssh', HOST,
                              "printf 'FORCED_SSH_PASS\\n'"], 90)
     assert code == 0 and 'FORCED_SSH_PASS' in output and not marker.exists(), output
-    code, output = terminal([SLUSH, 'validate', '--transport', 'auto', HOST], 120)
+    code, output = terminal([SLUSH, 'validate', HOST], 120)
     assert code == 0 and 'all 9 checks passed' in output, output
     # Remove only the local Mosh launcher from the isolated client PATH.
     original_path = ENV['PATH']
     (BIN / 'mosh').rename(BIN / 'hidden-mosh')
     ENV['PATH'] = str(BIN)
     try:
-        code, output = terminal([SLUSH, '--transport', 'auto', HOST,
+        code, output = terminal([SLUSH, HOST,
                                  "printf 'AUTO_SSH_PASS\\n'; exit 37"], 90)
         assert code == 37 and 'AUTO_SSH_PASS' in output and not marker.exists(), output
-        code, output = terminal([SLUSH, 'validate', '--transport', 'auto', HOST], 120)
+        code, output = terminal([SLUSH, 'validate', HOST], 120)
         assert code == 0 and 'all 10 checks passed' in output, output
     finally:
         ENV['PATH'] = original_path
@@ -282,8 +282,19 @@ try:
         assert 'NEVER_FALLBACK' not in output and not marker.exists(), output
     finally:
         (ROOT / 'kill-master').unlink()
+    # The native fixture also has a real account without mosh-server on PATH.
+    if HOST == 'native':
+        code, output = terminal([SLUSH, 'native-ssh',
+                                 "printf 'REMOTE_SSH_PASS\\n'; exit 37"], 90)
+        assert code == 37 and 'REMOTE_SSH_PASS' in output and not marker.exists(), output
+        code, output = terminal([SLUSH, 'validate', 'native-ssh'], 120)
+        assert code == 0 and 'all 10 checks passed' in output, output
+        code, output = terminal([SLUSH, '--transport', 'mosh', 'native-ssh',
+                                 "printf 'NEVER_EXECUTED\\n'"], 90)
+        assert code != 0 and 'NEVER_EXECUTED' not in output and marker.exists(), output
+        marker.unlink()
     # validate itself is a real SSH probe, not mosh coverage.
-    code, output = terminal([SLUSH, "validate", HOST], 120)
+    code, output = terminal([SLUSH, "validate", '--transport', 'ssh', HOST], 120)
     assert code == 0 and "all 10 checks passed" in output, output
     (ROOT / "calls").write_text("")
     # Simulate permissions left by an older installation; refresh must repair.

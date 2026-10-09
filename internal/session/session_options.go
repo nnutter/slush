@@ -7,13 +7,14 @@ import (
 	"strings"
 )
 
-// Transport selects the terminal client. Both choices use SSH for forwarding.
+// Transport selects the terminal client. The zero value detects available
+// Mosh and otherwise uses SSH. Both clients use SSH for forwarding.
 type Transport int
 
 const (
-	SSH Transport = iota
+	Auto Transport = iota
+	SSH
 	Mosh
-	Auto
 )
 
 // Forward describes a TCP listener and its destination.

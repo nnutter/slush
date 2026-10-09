@@ -11,13 +11,17 @@ the remote environment (`PATH` shadow, `BROWSER=slush-open`, session
 token) without touching your dotfiles. When the session ends, the
 tunnel and server go with it.
 
-By default `slush` invokes `ssh` with a held ControlMaster plus
-`-R 2489:127.0.0.1:2489`.
-Select [mosh](https://mosh.org) with `--transport mosh`.
+The default `--transport auto` selects [Mosh](https://mosh.org) when local `mosh` and remote `mosh-server` are available; otherwise, it selects SSH.
+Use `--transport ssh` to force SSH, or `--transport mosh` to force Mosh without fallback.
+Authentication failures, connection failures, and failed availability probes are errors, not reasons to fall back.
+Once Mosh starts, slush does not retry a failed session over SSH or execute the remote command again.
+Both transports use a held SSH ControlMaster with `-R 2489:127.0.0.1:2489`.
+`validate` uses the same automatic selection and supports the same explicit transport options.
 Slush owns its options and uses the same connection and forwarding settings for both transports.
 Use `--help`, `--version`, or `completion` for CLI help, build information, and shell completions.
 
 ```sh
+slush user@host
 slush --transport ssh user@host
 slush --transport mosh -p 2222 -i ./key user@host
 slush validate --transport mosh user@host

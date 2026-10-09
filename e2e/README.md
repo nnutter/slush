@@ -20,7 +20,10 @@ Guest boot and package installation can take approximately 15 minutes.
 
 ## Protected behavior
 
-- `validate` connects, provisions, and checks clipboard forwarding.
+- Default Auto selection starts real Mosh when both binaries are available and uses SSH when local Mosh or remote `mosh-server` is absent.
+- `validate` uses the same automatic selection, connects, provisions, and checks clipboard forwarding.
+- Forced SSH does not start Mosh, and forced Mosh does not fall back when the server is absent.
+- Losing the held SSH master during availability detection fails without reconnecting or executing the remote command.
 - Every provisioned copy and paste name transfers exact bytes, including NULs, quotes, Unicode, and trailing newlines.
 - Every open name and the exported `BROWSER` deliver exact URL arguments to the client backend.
 - Remote file paths are rejected, and dry-run does not launch the browser.
@@ -43,6 +46,9 @@ Assertions on remote success markers and independent client-side files prevent a
 Keys, SSH configuration, native server caches, and desktop-tool records reside under `/tmp`.
 The test SSH launcher adds an isolated `-F` configuration and then execs the real SSH executable.
 It does not fake SSH responses or edit the user's SSH configuration.
+For the connection-loss regression, it terminates the actual held master immediately before the availability probe.
+The Mosh launcher records starts and then execs the real Mosh executable.
+Native servers have a separate SSH-only account whose PATH mirrors real server tools through symlinks under `/tmp`, but excludes `mosh-server`.
 The Linux guest is disposable and receives its own cloud-init configuration.
 
 The workflow prints the server and guest boot logs during cleanup.

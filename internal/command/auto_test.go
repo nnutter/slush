@@ -22,6 +22,7 @@ func TestTransportSelection(t *testing.T) {
 		localMosh, remoteMosh                          bool
 		probeExit, moshExit, wantExit                  int
 	}{
+		{name: "default prefers Mosh", localMosh: true, remoteMosh: true, wantClient: "mosh"},
 		{name: "both available", mode: "auto", localMosh: true, remoteMosh: true, wantClient: "mosh"},
 		{name: "local missing", mode: "auto", remoteMosh: true, wantClient: "ssh"},
 		{name: "remote missing", mode: "auto", localMosh: true, wantClient: "ssh"},
@@ -63,7 +64,11 @@ exec `+remote.ShellQuote(sshSession)+` "$@"`)
 				writeFakeClipTool(t, bin, "mosh", "printf 'mosh\\n' >> "+remote.ShellQuote(clientLog)+"\nexit "+strconv.Itoa(test.moshExit))
 			}
 			t.Setenv("PATH", bin)
-			err := Execute([]string{"--transport", test.mode, "user@host", "true"})
+			args := []string{"user@host", "true"}
+			if test.mode != "" {
+				args = append([]string{"--transport", test.mode}, args...)
+			}
+			err := Execute(args)
 			assert.Equal(t, test.wantExit, ExitCode(err))
 			if test.wantError != "" {
 				require.ErrorContains(t, err, test.wantError)

@@ -42,7 +42,10 @@ func withRemoteEnvSSH(rest []string, token string) ([]string, bool, error) {
 		return nil, false, err
 	}
 	script, interactive := remote.SSHCommand(cmd, token)
-	return append(head, script), interactive, nil
+	wrapped := make([]string, len(head)+1)
+	copy(wrapped, head)
+	wrapped[len(head)] = script
+	return wrapped, interactive, nil
 }
 
 // sshHostIndex returns the position of the [user@]host operand.

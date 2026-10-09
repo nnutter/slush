@@ -50,5 +50,8 @@ func MoshCommand(command []string, env Environment) []string {
 		script += `exec "$@"`
 		tail = append([]string{"sh"}, command...)
 	}
-	return append([]string{"sh", "-c", script}, tail...)
+	wrapped := make([]string, 3+len(tail))
+	copy(wrapped, []string{"sh", "-c", script})
+	copy(wrapped[3:], tail)
+	return wrapped
 }

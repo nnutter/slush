@@ -50,18 +50,12 @@ func Execute(args []string) error {
 
 func newCommand() *cobra.Command {
 	var mode clientMode
-	var mosh, forwardAgent bool
+	var forwardAgent bool
 	var port tcpPort
 	var identity, config string
 	var local, remote forwardValues
 
 	options := func(cmd *cobra.Command, args []string) (session.Options, error) {
-		if mosh {
-			if cmd.Flags().Changed("transport") {
-				return session.Options{}, fmt.Errorf("choose either --transport or --mosh, not both")
-			}
-			mode = modeMosh
-		}
 		if strings.HasPrefix(args[0], "-") || strings.ContainsAny(args[0], "\r\n\t ") {
 			return session.Options{}, fmt.Errorf("invalid host %q; use an SSH alias or [user@]host", args[0])
 		}
@@ -97,7 +91,6 @@ func newCommand() *cobra.Command {
 	root.Flags().SetInterspersed(false)
 	flags := root.PersistentFlags()
 	flags.Var(&mode, "transport", "Terminal transport: ssh or mosh")
-	flags.BoolVar(&mosh, "mosh", false, "Use mosh (shorthand for --transport mosh)")
 	flags.BoolVarP(&forwardAgent, "forward-agent", "A", false, "Forward the local SSH agent for the session lifetime (disabled by default)")
 	flags.VarP(&port, "port", "p", "Connection port for SSH (otherwise use SSH configuration)")
 	flags.StringVarP(&identity, "identity", "i", "", "Identity file for SSH in either transport")

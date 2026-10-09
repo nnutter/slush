@@ -110,7 +110,7 @@ func TestRunEndToEndWithMosh(t *testing.T) {
 
 	require.NoError(t, ensureClipboardPortFree())
 
-	code := run([]string{"--mosh", "user@host"})
+	code := run([]string{"--transport", "mosh", "user@host"})
 	assert.Equal(t, 0, code)
 	requirePortFree(t, clipboardPort)
 }
@@ -129,7 +129,7 @@ func TestRunEndToEndMoshWithLocalForward(t *testing.T) {
 
 	require.NoError(t, ensureClipboardPortFree())
 
-	code := run([]string{"--mosh", "-L", "8080:127.0.0.1:8080", "user@host"})
+	code := run([]string{"--transport", "mosh", "-L", "8080:127.0.0.1:8080", "user@host"})
 	assert.Equal(t, 0, code)
 	requirePortFree(t, clipboardPort)
 }
@@ -147,7 +147,7 @@ func TestRunMoshNotFound(t *testing.T) {
 
 	require.NoError(t, ensureClipboardPortFree())
 
-	code := run([]string{"--mosh", "user@host"})
+	code := run([]string{"--transport", "mosh", "user@host"})
 	assert.Equal(t, 1, code)
 	requirePortFree(t, clipboardPort)
 }
@@ -166,7 +166,7 @@ func TestRunMoshMissingHost(t *testing.T) {
 
 	require.NoError(t, ensureClipboardPortFree())
 
-	code := run([]string{"--mosh", "-p", "60001"})
+	code := run([]string{"--transport", "mosh", "-p", "60001"})
 	assert.Equal(t, 1, code)
 	requirePortFree(t, clipboardPort)
 }

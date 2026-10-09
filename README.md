@@ -13,7 +13,7 @@ tunnel and server go with it.
 
 By default `slush` invokes `ssh` with a held ControlMaster plus
 `-R 2489:127.0.0.1:2489`.
-Select [mosh](https://mosh.org) with `--transport mosh`, or use the `--mosh` shorthand.
+Select [mosh](https://mosh.org) with `--transport mosh`.
 Slush owns its options and uses the same connection and forwarding settings for both transports.
 Use `--help`, `--version`, or `completion` for CLI help, build information, and shell completions.
 

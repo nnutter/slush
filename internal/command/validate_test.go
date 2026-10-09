@@ -155,7 +155,7 @@ func TestRunValidateEndToEndMosh(t *testing.T) {
 	writeFakeValidateSSH(t, binDir)
 	validateTestEnv(t, binDir)
 
-	code := run([]string{"--mosh", "validate", "user@host"})
+	code := run([]string{"--transport", "mosh", "validate", "user@host"})
 	assert.Equal(t, 0, code)
 }
 

@@ -33,6 +33,12 @@ func Run(options Options) (int, error) {
 		return 0, err
 	}
 	defer connection.Close()
+	if options.Transport == Auto {
+		path, err = clientPath(connection.Transport())
+		if err != nil {
+			return 0, err
+		}
+	}
 	return connection.runClient(path)
 }
 
@@ -61,7 +67,17 @@ func Open(options Options, token string) (*Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Session{options: native, sshPath: sshPath, host: host, params: params, close: close}, nil
+	connection := &Session{options: native, sshPath: sshPath, host: host, params: params, close: close}
+	if options.Transport == Auto {
+		mode, err := connection.autoTransport()
+		if err != nil {
+			connection.Close()
+			return nil, err
+		}
+		options.Transport = mode
+		connection.options = options.nativeOptions()
+	}
+	return connection, nil
 }
 
 // Close removes forwarding and terminates the held SSH connection.
@@ -105,6 +121,28 @@ func (s *Session) WrappedCommand(command string) (string, error) {
 		return "", err
 	}
 	return wrapped[len(wrapped)-1], nil
+}
+
+func (s *Session) autoTransport() (Transport, error) {
+	if _, err := exec.LookPath("mosh"); err != nil {
+		return SSH, nil
+	}
+	// Probe the bootstrap's normal PATH, not the shim-prefixed session PATH.
+	// A missing master must fail instead of opening a new SSH connection.
+	output, err := remote.SSHExec(s.sshPath, s.host,
+		"if command -v mosh-server >/dev/null 2>&1; then printf mosh; else printf ssh; fi", nil,
+		append([]string{"-o", "ControlMaster=no", "-o", "ProxyCommand=false", "-S", s.params.controlPath}, s.options.connOpts...))
+	if err != nil {
+		return SSH, fmt.Errorf("detect remote Mosh availability: %w", err)
+	}
+	switch strings.TrimSpace(output) {
+	case "mosh":
+		return Mosh, nil
+	case "ssh":
+		return SSH, nil
+	default:
+		return SSH, fmt.Errorf("unexpected remote Mosh availability response: %q", output)
+	}
 }
 
 func (s *Session) moshClientArgs() ([]string, error) {

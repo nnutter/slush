@@ -32,10 +32,20 @@ BIN = ROOT / "bin"
 BIN.mkdir()
 SSH = shutil.which("ssh")
 (BIN / "ssh").write_text(
-    "#!/bin/sh\ncase \"$*\" in *mosh-server*) printf '%s\\n' \"$$\" >> "
+    '#!/bin/sh\ncase " $* " in *" -N "*) printf \'%s\' "$$" > '
+    + shlex.quote(str(ROOT / 'master-pid')) + ' ;; esac\n'
+    + 'case "$*" in *"command -v mosh-server"*) if [ -e '
+    + shlex.quote(str(ROOT / 'kill-master')) + ' ]; then kill "$(/bin/cat '
+    + shlex.quote(str(ROOT / 'master-pid')) + ')"; /bin/sleep 0.3; fi ;; esac\n'
+    + "case \"$*\" in *mosh-server*new*) printf '%s\\n' \"$$\" >> "
     + shlex.quote(str(ROOT / 'bootstrap-pids')) + ' ;; esac\nexec '
     + shlex.quote(SSH) + " -F " + shlex.quote(CONFIG) + ' "$@"\n')
 (BIN / "ssh").chmod(0o755)
+MOSH = shutil.which("mosh")
+(BIN / "mosh").write_text(
+    "#!/bin/sh\nprintf 'started\\n' >> " + shlex.quote(str(ROOT / 'mosh-clients'))
+    + '\nexec ' + shlex.quote(MOSH) + ' "$@"\n')
+(BIN / "mosh").chmod(0o755)
 ENV["PATH"] = str(BIN) + os.pathsep + ENV["PATH"]
 ENV["WAYLAND_DISPLAY"] = "e2e"
 # Native platform names with independent file I/O, not a protocol mock.
@@ -238,6 +248,40 @@ for token, expected in [('wrong-token', b'ERR'), (os.environ['SLUSH_TOKEN'], b'O
 '''.replace("PAYLOAD", REMOTE_PAYLOAD)
 
 try:
+    # Auto must launch real Mosh when both native binaries are available.
+    marker = ROOT / 'mosh-clients'
+    code, output = terminal([SLUSH, '--transport', 'auto', HOST,
+                             "printf 'AUTO_AVAILABLE_PASS\\n'"], 90)
+    assert code == 0 and 'AUTO_AVAILABLE_PASS' in output and marker.exists(), output
+    marker.unlink()
+    # Explicit SSH must not launch Mosh, even when it is available.
+    code, output = terminal([SLUSH, '--transport', 'ssh', HOST,
+                             "printf 'FORCED_SSH_PASS\\n'"], 90)
+    assert code == 0 and 'FORCED_SSH_PASS' in output and not marker.exists(), output
+    code, output = terminal([SLUSH, 'validate', '--transport', 'auto', HOST], 120)
+    assert code == 0 and 'all 9 checks passed' in output, output
+    # Remove only the local Mosh launcher from the isolated client PATH.
+    original_path = ENV['PATH']
+    (BIN / 'mosh').rename(BIN / 'hidden-mosh')
+    ENV['PATH'] = str(BIN)
+    try:
+        code, output = terminal([SLUSH, '--transport', 'auto', HOST,
+                                 "printf 'AUTO_SSH_PASS\\n'; exit 37"], 90)
+        assert code == 37 and 'AUTO_SSH_PASS' in output and not marker.exists(), output
+        code, output = terminal([SLUSH, 'validate', '--transport', 'auto', HOST], 120)
+        assert code == 0 and 'all 10 checks passed' in output, output
+    finally:
+        ENV['PATH'] = original_path
+        (BIN / 'hidden-mosh').rename(BIN / 'mosh')
+    # Losing the held master must not reconnect to discover capabilities.
+    (ROOT / 'kill-master').touch()
+    try:
+        code, output = terminal([SLUSH, '--transport', 'auto', HOST,
+                                 "printf 'NEVER_FALLBACK\\n'"], 90)
+        assert code != 0 and 'detect remote mosh availability' in output.lower(), output
+        assert 'NEVER_FALLBACK' not in output and not marker.exists(), output
+    finally:
+        (ROOT / 'kill-master').unlink()
     # validate itself is a real SSH probe, not mosh coverage.
     code, output = terminal([SLUSH, "validate", HOST], 120)
     assert code == 0 and "all 10 checks passed" in output, output

@@ -22,25 +22,32 @@ type clientMode session.Transport
 const (
 	modeSSH  = clientMode(session.SSH)
 	modeMosh = clientMode(session.Mosh)
+	modeAuto = clientMode(session.Auto)
 )
 
 func (m *clientMode) Set(value string) error {
 	switch value {
+	case "auto":
+		*m = modeAuto
 	case "ssh":
 		*m = modeSSH
 	case "mosh":
 		*m = modeMosh
 	default:
-		return fmt.Errorf("unknown transport %q; choose ssh or mosh", value)
+		return fmt.Errorf("unknown transport %q; choose auto, ssh, or mosh", value)
 	}
 	return nil
 }
 
 func (m clientMode) String() string {
-	if m == modeMosh {
+	switch m {
+	case modeAuto:
+		return "auto"
+	case modeMosh:
 		return "mosh"
+	default:
+		return "ssh"
 	}
-	return "ssh"
 }
 
 func (*clientMode) Type() string { return "transport" }

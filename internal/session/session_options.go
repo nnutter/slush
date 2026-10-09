@@ -13,6 +13,7 @@ type Transport int
 const (
 	SSH Transport = iota
 	Mosh
+	Auto
 )
 
 // Forward describes a TCP listener and its destination.
@@ -77,7 +78,7 @@ func (o Options) nativeOptions() sessionOptions {
 		}
 	}
 	args := append([]string{o.Host}, o.Command...)
-	if o.Transport == SSH {
+	if o.Transport != Mosh {
 		args = slices.Concat(connOpts, args)
 	} else if len(o.Command) > 0 {
 		args = []string{o.Host, "sh", "-c", strings.Join(o.Command, " ")}

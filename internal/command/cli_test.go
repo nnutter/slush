@@ -17,7 +17,7 @@ func TestCommandRejectsInvalidOptions(t *testing.T) {
 	}{
 		{"missing host", nil, "missing host"},
 		{"unknown option", []string{"--ssh-option", "host"}, "unknown flag"},
-		{"unsupported transport", []string{"--transport", "et", "host"}, "choose ssh or mosh"},
+		{"unsupported transport", []string{"--transport", "et", "host"}, "choose auto, ssh, or mosh"},
 		{"invalid port", []string{"-p", "65536", "host"}, "between 1 and 65535"},
 		{"bad forward", []string{"-L", "8080:db:nope", "host"}, "destination port"},
 		{"missing forward", []string{"-R"}, "needs an argument"},

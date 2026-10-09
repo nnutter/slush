@@ -90,7 +90,7 @@ func newCommand() *cobra.Command {
 	}
 	root.Flags().SetInterspersed(false)
 	flags := root.PersistentFlags()
-	flags.Var(&mode, "transport", "Terminal transport: ssh or mosh")
+	flags.Var(&mode, "transport", "Terminal transport: auto, ssh, or mosh (auto prefers available Mosh)")
 	flags.BoolVarP(&forwardAgent, "forward-agent", "A", false, "Forward the local SSH agent for the session lifetime (disabled by default)")
 	flags.VarP(&port, "port", "p", "Connection port for SSH (otherwise use SSH configuration)")
 	flags.StringVarP(&identity, "identity", "i", "", "Identity file for SSH in either transport")
@@ -98,7 +98,7 @@ func newCommand() *cobra.Command {
 	flags.VarP(&local, "local-forward", "L", "Make a remote TCP port available locally; omitted addresses are localhost, one port is symmetric")
 	flags.VarP(&remote, "remote-forward", "R", "Make a local TCP port available on the remote; omitted addresses are localhost, one port is symmetric")
 	_ = root.RegisterFlagCompletionFunc("transport", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
-		return []string{"ssh", "mosh"}, cobra.ShellCompDirectiveNoFileComp
+		return []string{"auto", "ssh", "mosh"}, cobra.ShellCompDirectiveNoFileComp
 	})
 	_ = root.MarkPersistentFlagFilename("identity")
 	_ = root.MarkPersistentFlagFilename("config")

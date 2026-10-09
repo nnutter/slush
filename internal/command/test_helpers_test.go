@@ -4,7 +4,6 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"testing"
 	"time"
@@ -17,17 +16,6 @@ import (
 // run exercises the real command entry point and maps its error to a status.
 func run(args []string) int {
 	return ExitCode(Execute(args))
-}
-
-// emptyPath returns a PATH with no usable binaries: an empty dir, plus
-// an extra missing entry on unix so bare command names still fail.
-func emptyPath(t *testing.T) string {
-	t.Helper()
-	dir := t.TempDir()
-	if runtime.GOOS == "windows" {
-		return dir
-	}
-	return dir + string(os.PathListSeparator) + filepath.Join(dir, "nope")
 }
 
 // useEphemeralClipboardPort selects an isolated application endpoint.

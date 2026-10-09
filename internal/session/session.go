@@ -24,7 +24,16 @@ func Run(options Options) (int, error) {
 		return 0, err
 	}
 	defer server.Stop()
-	return runClientWithOptions(options.nativeOptions(), token)
+	path, err := clientPath(options.Transport)
+	if err != nil {
+		return 0, err
+	}
+	connection, err := Open(options, token)
+	if err != nil {
+		return 0, err
+	}
+	defer connection.Close()
+	return connection.runClient(path)
 }
 
 // Session is a prepared SSH connection shared by terminal clients and probes.
@@ -44,11 +53,15 @@ func Open(options Options, token string) (*Session, error) {
 		return nil, fmt.Errorf("ssh not found on PATH: %w", err)
 	}
 	native := options.nativeOptions()
-	close, params, err := establishSession(sshPath, options.Host, native, token)
+	host, err := sessionHost(native)
 	if err != nil {
 		return nil, err
 	}
-	return &Session{options: native, sshPath: sshPath, host: options.Host, params: params, close: close}, nil
+	close, params, err := establishSession(sshPath, host, native, token)
+	if err != nil {
+		return nil, err
+	}
+	return &Session{options: native, sshPath: sshPath, host: host, params: params, close: close}, nil
 }
 
 // Close removes forwarding and terminates the held SSH connection.
@@ -94,32 +107,61 @@ func (s *Session) WrappedCommand(command string) (string, error) {
 	return wrapped[len(wrapped)-1], nil
 }
 
-func runClientWithOptions(options sessionOptions, token string) (int, error) {
-	if options.mode == Mosh {
-		return runMoshSession(options, token)
+func (s *Session) moshClientArgs() ([]string, error) {
+	clientArgs, err := withRemoteEnvMosh(s.options.args, s.params)
+	if err != nil {
+		return nil, err
 	}
-	return runSSHSession(options, token)
+	quoted := make([]string, len(s.options.connOpts))
+	for i, option := range s.options.connOpts {
+		quoted[i] = remote.ShellQuote(option)
+	}
+	// Mosh's default IP discovery disables multiplexing with -S none.
+	// Its short-lived bootstrap must not create a second agent socket.
+	clientArgs = append([]string{"--no-ssh-pty", "--ssh=ssh -oForwardAgent=no " + strings.Join(quoted, " ")}, clientArgs...)
+	return withMoshSSHControlPath(clientArgs, s.params), nil
 }
 
-func runSSHSession(options sessionOptions, token string) (int, error) {
-	rest := options.args
-	host, err := sshHostOperand(rest)
+func (s *Session) runClient(path string) (int, error) {
+	var args []string
+	var err error
+	if s.options.mode == Mosh {
+		args, err = s.moshClientArgs()
+	} else {
+		args, err = s.sshClientArgs()
+	}
 	if err != nil {
 		return 0, err
 	}
-	clientArgs, interactive, err := withRemoteEnvSSH(rest, token)
+	return process.Run(path, args, path == s.sshPath)
+}
+
+func (s *Session) sshClientArgs() ([]string, error) {
+	clientArgs, interactive, err := withRemoteEnvSSH(s.options.args, s.params.token)
 	if err != nil {
-		return 0, err
-	}
-	sshPath, err := exec.LookPath("ssh")
-	if err != nil {
-		return 0, fmt.Errorf("ssh not found on PATH: %w", err)
+		return nil, err
 	}
 	if interactive && process.StdinIsTerminal() {
 		clientArgs = append([]string{"-t"}, clientArgs...)
 	}
-	return runTunneledSession(sshPath, host, options, clientArgs, token,
-		func(args []string, params sessionParams) ([]string, error) {
-			return withSSHControlPath(args, params), nil
-		})
+	return withSSHControlPath(clientArgs, s.params), nil
+}
+
+func sessionHost(options sessionOptions) (string, error) {
+	if options.mode == Mosh {
+		return moshDestination(options.args)
+	}
+	return sshHostOperand(options.args)
+}
+
+func clientPath(mode Transport) (string, error) {
+	name := "ssh"
+	if mode == Mosh {
+		name = "mosh"
+	}
+	path, err := exec.LookPath(name)
+	if err != nil {
+		return "", fmt.Errorf("%s not found on PATH: %w", name, err)
+	}
+	return path, nil
 }

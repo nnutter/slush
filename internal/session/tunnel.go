@@ -5,11 +5,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
-	"github.com/nnutter/slush/internal/process"
 	"github.com/nnutter/slush/internal/remote"
 )
 
@@ -27,72 +25,12 @@ type sshTunnel struct {
 	controlPath string
 }
 
-// runMoshSession keeps an ssh tunnel up for clipboard and any -L/-R forwards,
-// and runs mosh for the interactive session. mosh cannot carry port forwards
-// itself because it tears down its bootstrap ssh connection after start.
-func runMoshSession(options sessionOptions, token string) (int, error) {
-	args := options.args
-	host, err := moshDestination(args)
-	if err != nil {
-		return 0, err
-	}
-	moshPath, err := exec.LookPath("mosh")
-	if err != nil {
-		return 0, fmt.Errorf("mosh not found on PATH: %w", err)
-	}
-	prepare := func(args []string, params sessionParams) ([]string, error) {
-		clientArgs, err := withRemoteEnvMosh(args, params)
-		if err != nil {
-			return nil, err
-		}
-		quoted := make([]string, len(options.connOpts))
-		for i, option := range options.connOpts {
-			quoted[i] = remote.ShellQuote(option)
-		}
-		// Mosh's default IP discovery disables multiplexing with -S none.
-		// Its short-lived bootstrap must not create a second agent socket.
-		clientArgs = append([]string{"--no-ssh-pty", "--ssh=ssh -oForwardAgent=no " + strings.Join(quoted, " ")}, clientArgs...)
-		return withMoshSSHControlPath(clientArgs, params), nil
-	}
-	return runTunneledSession(moshPath, host, options, args, token, prepare)
-}
-
 // sessionParams carries per-session values into client arg preparation
 // and remote provisioning.
 type sessionParams struct {
 	controlPath string
 	token       string
 	agentSocket string
-}
-
-// runTunneledSession starts a background ssh ControlMaster with the given
-// forwards (plus clipboard), provisions the remote clipboard shims, runs
-// clientPath, then tears the tunnel down. Provisioning failures degrade
-// to a plain session with a warning; validate (not the session) is
-// where clipboard forwarding is enforced.
-func runTunneledSession(
-	clientPath, sshHost string,
-	options sessionOptions, clientArgs []string,
-	token string,
-	prepareArgs func([]string, sessionParams) ([]string, error),
-) (int, error) {
-	sshPath, err := exec.LookPath("ssh")
-	if err != nil {
-		return 0, fmt.Errorf("ssh not found on PATH: %w", err)
-	}
-	teardown, params, err := establishSession(sshPath, sshHost, options, token)
-	if err != nil {
-		return 0, err
-	}
-	defer teardown()
-
-	if prepareArgs != nil {
-		clientArgs, err = prepareArgs(clientArgs, params)
-		if err != nil {
-			return 0, err
-		}
-	}
-	return process.Run(clientPath, clientArgs, clientPath == sshPath)
 }
 
 // establishSession starts the tunnel master and provisions the remote

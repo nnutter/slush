@@ -37,11 +37,11 @@ func ExitCode(err error) int {
 	return 1
 }
 
-// Execute runs the slush CLI with the supplied arguments.
-func Execute(args []string) error {
+// Execute runs the slush CLI with the supplied arguments and version.
+func Execute(args []string, version string) error {
 	command := newCommand()
 	command.SetArgs(args)
-	return fang.Execute(context.Background(), command, fang.WithErrorHandler(func(w io.Writer, styles fang.Styles, err error) {
+	return fang.Execute(context.Background(), command, fang.WithVersion(version), fang.WithErrorHandler(func(w io.Writer, styles fang.Styles, err error) {
 		if _, remoteExit := errors.AsType[remoteExitError](err); !remoteExit {
 			fang.DefaultErrorHandler(w, styles, err)
 		}

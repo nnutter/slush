@@ -68,7 +68,7 @@ exec `+remote.ShellQuote(sshSession)+` "$@"`)
 			if test.mode != "" {
 				args = append([]string{"--transport", test.mode}, args...)
 			}
-			err := Execute(args)
+			err := Execute(args, "dev")
 			assert.Equal(t, test.wantExit, ExitCode(err))
 			if test.wantError != "" {
 				require.ErrorContains(t, err, test.wantError)

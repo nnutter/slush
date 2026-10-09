@@ -15,7 +15,7 @@ import (
 
 // run exercises the real command entry point and maps its error to a status.
 func run(args []string) int {
-	return ExitCode(Execute(args))
+	return ExitCode(Execute(args, "dev"))
 }
 
 // useEphemeralClipboardPort selects an isolated application endpoint.

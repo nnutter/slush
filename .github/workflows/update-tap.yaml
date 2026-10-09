@@ -67,12 +67,8 @@ jobs:
           FORMULA_NAME: ${{ env.FORMULA_NAME }}
           TAG: ${{ steps.release.outputs.tag }}
         run: |
-<<<<<<< HEAD
-          if grep -Fq "/archive/refs/tags/${TAG}.tar.gz" "Formula/${FORMULA_NAME}.rb"; then
-=======
           if grep -Fq "/archive/refs/tags/${TAG}.tar.gz" "Formula/${FORMULA_NAME}.rb" ||
              grep -Fq "/tarball/${TAG}" "Formula/${FORMULA_NAME}.rb"; then
->>>>>>> ed735e9241092f9871d6825f3d58addef7d3a6c0
             echo "needed=false" >> "$GITHUB_OUTPUT"
             echo "Formula ${FORMULA_NAME} already uses ${TAG}."
           else
@@ -99,10 +95,7 @@ jobs:
         if: steps.needed.outputs.needed == 'true'
         env:
           FORMULA_NAME: ${{ env.FORMULA_NAME }}
-<<<<<<< HEAD
-=======
           HOMEBREW_GITHUB_API_TOKEN: ${{ github.token }}
->>>>>>> ed735e9241092f9871d6825f3d58addef7d3a6c0
           TAG: ${{ steps.release.outputs.tag }}
         run: bin/update-formula "$FORMULA_NAME" "$TAG"
 
@@ -162,3 +155,4 @@ jobs:
             --repo "${TAP_OWNER}/${TAP_REPOSITORY}" \
             --merge \
             --auto \
+            "$BRANCH_NAME"

@@ -1,0 +1,23 @@
+# Read the user's zsh startup file with its original ZDOTDIR, then restore
+# slush's environment. The final login hook restores ZDOTDIR for logout.
+if [[ '__STARTUP_FILE__' == '.zshenv' ]]; then
+    _slush_saved_token=$SLUSH_TOKEN
+    _slush_saved_port=$SLUSH_PORT
+fi
+_slush_wrapper_dir=$ZDOTDIR
+if [[ -n $SLUSH_ZDOTDIR ]]; then
+    ZDOTDIR=$SLUSH_ZDOTDIR
+else
+    unset ZDOTDIR
+fi
+if [[ -r ${ZDOTDIR:-$HOME}/__STARTUP_FILE__ ]]; then
+    source "${ZDOTDIR:-$HOME}/__STARTUP_FILE__"
+fi
+SLUSH_ZDOTDIR=${ZDOTDIR-}
+export SLUSH=1 SLUSH_TOKEN=$_slush_saved_token SLUSH_PORT=$_slush_saved_port BROWSER=slush-open
+export PATH="${_slush_wrapper_dir:h}/bin:$PATH"
+if [[ '__STARTUP_FILE__' == '.zlogin' ]]; then
+    unset SLUSH_ZDOTDIR _slush_saved_token _slush_saved_port _slush_wrapper_dir
+else
+    export ZDOTDIR=$_slush_wrapper_dir
+fi

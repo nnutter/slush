@@ -1,0 +1,119 @@
+name: E2E
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  heterogeneous:
+    name: E2E (macOS ↔ Linux, ${{ matrix.transport }})
+    runs-on: macos-15-intel
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        transport: [ssh, mosh]
+    env:
+      E2E_DIR: /tmp/slush-ci
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Install software-emulated Linux peer tools
+        run: brew install qemu mosh
+      - name: Build clients and start both SSH servers
+        run: |
+          mkdir -p "$E2E_DIR"
+          go build -o "$E2E_DIR/slush" .
+          GOOS=linux GOARCH=amd64 go build -o "$E2E_DIR/slush-linux" .
+          bash e2e/start-server.sh "$E2E_DIR"
+          bash e2e/start-linux-vm.sh "$E2E_DIR"
+      - name: Exercise macOS client to Linux server
+        run: python3 e2e/suite.py "$E2E_DIR/slush" "$E2E_DIR/ssh_config" linux "${{ matrix.transport }}"
+      - name: Prepare Linux client to macOS server
+        run: |
+          /usr/bin/ssh -F "$E2E_DIR/ssh_config" linux 'mkdir -p /tmp/slush-peer'
+          /usr/bin/scp -F "$E2E_DIR/ssh_config" "$E2E_DIR/slush-linux" "$E2E_DIR/key" e2e/suite.py linux:/tmp/slush-peer/
+          cat > "$E2E_DIR/peer_config" <<EOF
+          Host mac
+            HostName 10.0.2.2
+            Port 2222
+            User $USER
+          Host mac-zsh
+            HostName 10.0.2.2
+            Port 2222
+            User slush-zsh
+          Host *
+            IdentityFile /tmp/slush-peer/key
+            IdentitiesOnly yes
+            StrictHostKeyChecking no
+            UserKnownHostsFile /tmp/slush-peer/known_hosts
+            BatchMode yes
+            ConnectTimeout 5
+          EOF
+          /usr/bin/scp -F "$E2E_DIR/ssh_config" "$E2E_DIR/peer_config" linux:/tmp/slush-peer/ssh_config
+      - name: Exercise Linux client to macOS server
+        run: |
+          /usr/bin/ssh -F "$E2E_DIR/ssh_config" linux 'chmod 600 /tmp/slush-peer/key; chmod +x /tmp/slush-peer/slush-linux'
+          /usr/bin/ssh -F "$E2E_DIR/ssh_config" linux 'python3 /tmp/slush-peer/suite.py /tmp/slush-peer/slush-linux /tmp/slush-peer/ssh_config mac ${{ matrix.transport }}'
+      - name: Diagnostics and cleanup
+        if: always()
+        run: |
+          sudo cat "$E2E_DIR/sshd.log" || true
+          cat "$E2E_DIR/vm-console.log" || true
+          /usr/bin/ssh -F "$E2E_DIR/ssh_config" linux 'sudo cat /var/log/cloud-init-output.log' || true
+          if [[ -f "$E2E_DIR/qemu.pid" ]]; then kill "$(cat "$E2E_DIR/qemu.pid")"; fi
+          if [[ -f "$E2E_DIR/sshd.pid" ]]; then sudo kill "$(cat "$E2E_DIR/sshd.pid")"; fi
+
+  native:
+    name: E2E (${{ matrix.os }}, ${{ matrix.transport }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15-intel]
+        transport: [ssh, mosh]
+    env:
+      E2E_DIR: /tmp/slush-ci
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Install mosh
+        run: |
+          if [[ "$RUNNER_OS" == Linux ]]; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq mosh
+          else
+            brew install mosh
+          fi
+      - name: Build and start isolated SSH server
+        run: |
+          mkdir -p "$E2E_DIR"
+          go build -o "$E2E_DIR/slush" .
+          bash e2e/start-server.sh "$E2E_DIR"
+      - name: Exercise real sessions
+        run: python3 e2e/suite.py "$E2E_DIR/slush" "$E2E_DIR/ssh_config" native "${{ matrix.transport }}"
+      - name: Server diagnostics and cleanup
+        if: always()
+        run: |
+          sudo cat "$E2E_DIR/sshd.log" || true
+          if [[ "$RUNNER_OS" == Linux ]]; then
+            docker logs slush-e2e || true
+            docker rm -f slush-e2e || true
+          elif [[ -f "$E2E_DIR/sshd.pid" ]]; then
+            sudo kill "$(cat "$E2E_DIR/sshd.pid")"
+          fi

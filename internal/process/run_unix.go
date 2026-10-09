@@ -1,6 +1,6 @@
 //go:build unix
 
-package main
+package process
 
 import (
 	"fmt"
@@ -13,15 +13,15 @@ import (
 	"golang.org/x/term"
 )
 
-// runSession runs the remote client (ssh or et) with the given args, attaching
+// Run runs the remote client (ssh, mosh, or et) with the given args, attaching
 // the current terminal as completely as possible while remaining the parent so
 // callers can clean up after Wait returns.
-func runSession(binPath string, args []string) (int, error) {
+func Run(binPath string, args []string, sharedTerminalGroup bool) (int, error) {
 	cmd := exec.Command(binPath, args...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: !sharedTerminalGroup}
 
 	stdinFD := int(os.Stdin.Fd())
 	tty := term.IsTerminal(stdinFD)
@@ -43,7 +43,13 @@ func runSession(binPath string, args []string) (int, error) {
 	}
 
 	if tty {
-		if err := setTerminalForegroundPgid(stdinFD, cmd.Process.Pid); err != nil {
+		foregroundGroup := cmd.Process.Pid
+		if sharedTerminalGroup {
+			// The held SSH master performs mux session I/O on the client's
+			// terminal descriptors. Keep both in the foreground group.
+			foregroundGroup = syscall.Getpgrp()
+		}
+		if err := setTerminalForegroundPgid(stdinFD, foregroundGroup); err != nil {
 			_ = cmd.Process.Kill()
 			_ = cmd.Wait()
 			return 0, fmt.Errorf("set terminal foreground process group: %w", err)

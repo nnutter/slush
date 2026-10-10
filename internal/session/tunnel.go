@@ -1,17 +1,24 @@
 package session
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/nnutter/slush/internal/protocol"
 	"github.com/nnutter/slush/internal/remote"
 )
 
 const sshTunnelReadyWait = 30 * time.Second
+
+// clipboardForwardAttempts bounds retries when the remote loopback port
+// chosen for this session is already taken.
+const clipboardForwardAttempts = 8
 
 // sshTunnel is a background ssh ControlMaster held as a child process (not
 // ssh -f) so it cannot outlive slush and leave remote listen ports stuck.
@@ -31,6 +38,7 @@ type sessionParams struct {
 	controlPath string
 	token       string
 	agentSocket string
+	remotePort  int
 }
 
 // establishSession starts the tunnel master and provisions the remote
@@ -38,7 +46,7 @@ type sessionParams struct {
 // run the interactive client (sessions) or probes (validate) over it.
 // connOpts are ssh connection options (port, identity, ...) for the
 // master; port forwards travel separately in forwards.
-func establishSession(sshPath, sshHost string, options sessionOptions, token string) (func(), sessionParams, error) {
+func establishSession(sshPath, sshHost string, options sessionOptions, token string, server *protocol.Server) (func(), sessionParams, error) {
 	dir, err := os.MkdirTemp("", "slush-ssh-")
 	if err != nil {
 		return nil, sessionParams{}, fmt.Errorf("create temp dir: %w", err)
@@ -51,7 +59,12 @@ func establishSession(sshPath, sshHost string, options sessionOptions, token str
 		_ = os.RemoveAll(dir)
 		return nil, sessionParams{}, err
 	}
-	params := sessionParams{controlPath: controlPath, token: token}
+	if err := bindClipboardForward(tunnel, server); err != nil {
+		tunnel.Stop()
+		_ = os.RemoveAll(dir)
+		return nil, sessionParams{}, err
+	}
+	params := sessionParams{controlPath: controlPath, token: token, remotePort: server.Port()}
 	if options.forwardAgent {
 		params.agentSocket, err = checkRemoteAgent(sshPath, sshHost, controlPath)
 		if err != nil {
@@ -66,14 +79,15 @@ func establishSession(sshPath, sshHost string, options sessionOptions, token str
 		_ = os.RemoveAll(dir)
 	}
 
-	if err := remote.Provision(sshPath, sshHost, remote.Environment{ControlPath: params.controlPath, Token: params.token, Port: options.protocolPort}); err != nil {
+	if err := remote.Provision(sshPath, sshHost, remote.Environment{ControlPath: params.controlPath, Token: params.token, Port: params.remotePort}); err != nil {
 		fmt.Fprintf(os.Stderr, "slush: clipboard provisioning: %v (continuing without clipboard forwarding)\n", err)
 	}
 	return teardown, params, nil
 }
 
-// startSSHTunnel opens an ssh master child with clipboard and any extra -L/-R
+// startSSHTunnel opens an ssh master child with the session's -L/-R
 // forwards, waiting until the control socket exists (forwards and auth OK).
+// The clipboard reverse forward is added after the master is up.
 func startSSHTunnel(sshPath, host, controlPath string, connOpts, forwards []string) (*sshTunnel, error) {
 	args := []string{
 		"-N",
@@ -85,7 +99,6 @@ func startSSHTunnel(sshPath, host, controlPath string, connOpts, forwards []stri
 	args = append(args, connOpts...)
 	args = append(args, forwards...)
 	args = append(args, host)
-	args = withReverseTunnel(args)
 
 	cmd := exec.Command(sshPath, args...)
 	cmd.Stdin = os.Stdin
@@ -176,6 +189,56 @@ func (t *sshTunnel) waitUntilReady(timeout time.Duration) error {
 			}
 		}
 	}
+}
+
+// bindClipboardForward publishes server's port on the remote loopback.
+// The same number is used at both ends so SLUSH_PORT names the listener
+// the shim dials and the server that accepts the forwarded connection.
+// A busy remote port allocates a new local port and tries again.
+func bindClipboardForward(tunnel *sshTunnel, server *protocol.Server) error {
+	var last error
+	for range clipboardForwardAttempts {
+		err := tunnel.forwardClipboard(server.Port())
+		if err == nil {
+			return nil
+		}
+		last = err
+		if !remoteForwardBusy(err) {
+			return err
+		}
+		if err := server.Relisten(); err != nil {
+			return err
+		}
+	}
+	return fmt.Errorf("choose a free clipboard port: %w", last)
+}
+
+func (t *sshTunnel) forwardClipboard(port int) error {
+	spec := fmt.Sprintf("%d:127.0.0.1:%d", port, port)
+	cmd := exec.Command(t.sshPath,
+		"-o", "ControlPath="+t.controlPath,
+		"-o", "ControlMaster=no",
+		"-O", "forward",
+		"-R", spec,
+		t.host,
+	)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		detail := strings.TrimSpace(stderr.String())
+		if detail == "" {
+			return fmt.Errorf("open clipboard forward: %w", err)
+		}
+		return fmt.Errorf("open clipboard forward: %s", detail)
+	}
+	return nil
+}
+
+// remoteForwardBusy reports OpenSSH's refusal to bind the requested
+// remote listen port. Other failures, such as a dead master, must not
+// be retried with a new port.
+func remoteForwardBusy(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "remote port forwarding failed")
 }
 
 func stopSSHTunnel(sshPath, host, controlPath string) {

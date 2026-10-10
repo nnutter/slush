@@ -1,45 +1,32 @@
 package command
 
 import (
-	"net"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestRunWarnsWhenClipboardAlreadyRunning(t *testing.T) {
-	useEphemeralClipboardPort(t)
-
-	ln, err := net.Listen("tcp", ":"+strconv.Itoa(clipboardPort))
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = ln.Close() })
-
-	code := run([]string{"-G", "example.com"})
-	assert.Equal(t, 1, code)
-}
-
 func TestRunEndToEndWithFakeBinaries(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("fake binary helpers are shell scripts")
 	}
 
-	useEphemeralClipboardPort(t)
+	trackClipboardPorts(t)
 
 	binDir := t.TempDir()
 	writeFakeSSHSession(t, binDir, fakeSSHSession{})
 	t.Setenv("PATH", binDir)
 
-	require.NoError(t, ensureClipboardPortFree())
-
 	code := run([]string{"user@host", "true"})
 	assert.Equal(t, 0, code)
-	requirePortFree(t, clipboardPort)
+	requireTrackedPortsReleased(t, 1)
 }
 
 func TestRunEndToEndSSHInteractive(t *testing.T) {
@@ -47,17 +34,15 @@ func TestRunEndToEndSSHInteractive(t *testing.T) {
 		t.Skip("fake binary helpers are shell scripts")
 	}
 
-	useEphemeralClipboardPort(t)
+	trackClipboardPorts(t)
 
 	binDir := t.TempDir()
 	writeFakeSSHSession(t, binDir, fakeSSHSession{})
 	t.Setenv("PATH", binDir)
 
-	require.NoError(t, ensureClipboardPortFree())
-
 	code := run([]string{"user@host"})
 	assert.Equal(t, 0, code)
-	requirePortFree(t, clipboardPort)
+	requireTrackedPortsReleased(t, 1)
 }
 
 func TestRunEndToEndSSHWithLocalForward(t *testing.T) {
@@ -65,17 +50,15 @@ func TestRunEndToEndSSHWithLocalForward(t *testing.T) {
 		t.Skip("fake binary helpers are shell scripts")
 	}
 
-	useEphemeralClipboardPort(t)
+	trackClipboardPorts(t)
 
 	binDir := t.TempDir()
 	writeFakeSSHSession(t, binDir, fakeSSHSession{masterForwards: []string{"-L", "localhost:8080:127.0.0.1:8080"}})
 	t.Setenv("PATH", binDir)
 
-	require.NoError(t, ensureClipboardPortFree())
-
 	code := run([]string{"-L", "8080:127.0.0.1:8080", "user@host", "true"})
 	assert.Equal(t, 0, code)
-	requirePortFree(t, clipboardPort)
+	requireTrackedPortsReleased(t, 1)
 }
 
 func TestRunPropagatesSSHExitCode(t *testing.T) {
@@ -83,17 +66,15 @@ func TestRunPropagatesSSHExitCode(t *testing.T) {
 		t.Skip("fake binary helpers are shell scripts")
 	}
 
-	useEphemeralClipboardPort(t)
+	trackClipboardPorts(t)
 
 	binDir := t.TempDir()
 	writeFakeSSHSession(t, binDir, fakeSSHSession{clientExit: 42})
 	t.Setenv("PATH", binDir)
 
-	require.NoError(t, ensureClipboardPortFree())
-
 	code := run([]string{"user@host"})
 	assert.Equal(t, 42, code)
-	requirePortFree(t, clipboardPort)
+	requireTrackedPortsReleased(t, 1)
 }
 
 func TestRunEndToEndWithMosh(t *testing.T) {
@@ -101,18 +82,16 @@ func TestRunEndToEndWithMosh(t *testing.T) {
 		t.Skip("fake binary helpers are shell scripts")
 	}
 
-	useEphemeralClipboardPort(t)
+	trackClipboardPorts(t)
 
 	binDir := t.TempDir()
 	writeFakeSSHTunnel(t, binDir)
 	writeFakeMosh(t, binDir)
 	t.Setenv("PATH", binDir)
 
-	require.NoError(t, ensureClipboardPortFree())
-
 	code := run([]string{"--transport", "mosh", "user@host"})
 	assert.Equal(t, 0, code)
-	requirePortFree(t, clipboardPort)
+	requireTrackedPortsReleased(t, 1)
 }
 
 func TestRunEndToEndMoshWithLocalForward(t *testing.T) {
@@ -120,18 +99,16 @@ func TestRunEndToEndMoshWithLocalForward(t *testing.T) {
 		t.Skip("fake binary helpers are shell scripts")
 	}
 
-	useEphemeralClipboardPort(t)
+	trackClipboardPorts(t)
 
 	binDir := t.TempDir()
 	writeFakeSSHTunnel(t, binDir, "-L", "localhost:8080:127.0.0.1:8080")
 	writeFakeMosh(t, binDir)
 	t.Setenv("PATH", binDir)
 
-	require.NoError(t, ensureClipboardPortFree())
-
 	code := run([]string{"--transport", "mosh", "-L", "8080:127.0.0.1:8080", "user@host"})
 	assert.Equal(t, 0, code)
-	requirePortFree(t, clipboardPort)
+	requireTrackedPortsReleased(t, 1)
 }
 
 func TestRunMoshNotFound(t *testing.T) {
@@ -139,17 +116,15 @@ func TestRunMoshNotFound(t *testing.T) {
 		t.Skip("fake binary helpers are shell scripts")
 	}
 
-	useEphemeralClipboardPort(t)
+	trackClipboardPorts(t)
 
 	binDir := t.TempDir()
 	writeFakeSSHTunnel(t, binDir)
 	t.Setenv("PATH", binDir)
 
-	require.NoError(t, ensureClipboardPortFree())
-
 	code := run([]string{"--transport", "mosh", "user@host"})
 	assert.Equal(t, 1, code)
-	requirePortFree(t, clipboardPort)
+	requireTrackedPortsReleased(t, 0)
 }
 
 func TestRunMoshMissingHost(t *testing.T) {
@@ -157,18 +132,44 @@ func TestRunMoshMissingHost(t *testing.T) {
 		t.Skip("fake binary helpers are shell scripts")
 	}
 
-	useEphemeralClipboardPort(t)
+	trackClipboardPorts(t)
 
 	binDir := t.TempDir()
 	writeFakeSSHTunnel(t, binDir)
 	writeFakeMosh(t, binDir)
 	t.Setenv("PATH", binDir)
 
-	require.NoError(t, ensureClipboardPortFree())
-
 	code := run([]string{"--transport", "mosh", "-p", "60001"})
 	assert.Equal(t, 1, code)
-	requirePortFree(t, clipboardPort)
+	requireTrackedPortsReleased(t, 0)
+}
+
+func TestConcurrentSessionsUseSeparatePorts(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake binary helpers are shell scripts")
+	}
+
+	trackClipboardPorts(t)
+	t.Setenv("SLUSH_TEST_HOLD", "2")
+
+	binDir := t.TempDir()
+	writeFakeSSHSession(t, binDir, fakeSSHSession{})
+	t.Setenv("PATH", binDir)
+
+	var wg sync.WaitGroup
+	codes := make([]int, 2)
+	for i := range codes {
+		wg.Go(func() {
+			codes[i] = run([]string{"user@host", "true"})
+		})
+	}
+	wg.Wait()
+	assert.Equal(t, []int{0, 0}, codes)
+	ports := trackedClipboardPorts(t)
+	require.Len(t, ports, 2)
+	assert.NotEqual(t, ports[0], ports[1])
+	requirePortFree(t, ports[0])
+	requirePortFree(t, ports[1])
 }
 
 // fakeSSHSession configures the combined ssh fake: one script serves
@@ -237,6 +238,7 @@ for arg in "$@"; do
     if [ "$arg" = "exit" ]; then
       exit 0
     fi
+` + fakeClipboardForward + `
     echo "unsupported control command: $arg" >&2
     exit 1
   fi
@@ -291,25 +293,11 @@ if [ -z "$is_master" ]; then
     echo "unexpected client args: $*" >&2
     exit 1
   fi
+` + fakeClientHold + `
   exit ` + strconv.Itoa(cfg.clientExit) + `
 fi
 
-saw_tunnel=
-prev=
-for arg in "$@"; do
-  if [ "$prev" = "-R" ]; then
-    if [ "$arg" = "2489:127.0.0.1:2489" ]; then
-      saw_tunnel=1
-    fi
-    prev=
-    continue
-  fi
-  case "$arg" in
-    -R) prev=-R ;;
-  esac
-done
-
-if [ -z "$saw_tunnel" ] || [ -z "$controlpath" ]; then
+if [ -z "$controlpath" ]; then
   echo "unexpected master args: $*" >&2
   exit 1
 fi
@@ -378,6 +366,7 @@ for arg in "$@"; do
     if [ "$arg" = "exit" ]; then
       exit 0
     fi
+` + fakeClipboardForward + `
     echo "unsupported control command: $arg" >&2
     exit 1
   fi
@@ -404,7 +393,6 @@ if [ -n "$is_provision" ]; then
 fi
 
 saw_n=
-saw_tunnel=
 prev=
 for arg in "$@"; do
   if [ "$prev" = "-o" ]; then
@@ -414,21 +402,13 @@ for arg in "$@"; do
     prev=
     continue
   fi
-  if [ "$prev" = "-R" ]; then
-    if [ "$arg" = "2489:127.0.0.1:2489" ]; then
-      saw_tunnel=1
-    fi
-    prev=
-    continue
-  fi
   case "$arg" in
     -N) saw_n=1 ;;
-    -R) prev=-R ;;
     -o) prev=-o ;;
   esac
 done
 
-if [ -z "$saw_n" ] || [ -z "$saw_tunnel" ] || [ -z "$controlpath" ]; then
+if [ -z "$saw_n" ] || [ -z "$controlpath" ]; then
   echo "unexpected ssh args: $*" >&2
   exit 1
 fi

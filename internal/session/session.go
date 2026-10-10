@@ -16,10 +16,7 @@ func Run(options Options) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	if err := protocol.EnsurePortFree(options.ProtocolPort); err != nil {
-		return 0, err
-	}
-	server, err := protocol.StartServer(options.ProtocolPort, token)
+	server, err := protocol.StartServer(0, token)
 	if err != nil {
 		return 0, err
 	}
@@ -28,7 +25,7 @@ func Run(options Options) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	connection, err := Open(options, token)
+	connection, err := Open(options, token, server)
 	if err != nil {
 		return 0, err
 	}
@@ -51,9 +48,11 @@ type Session struct {
 	close   func()
 }
 
-// Open establishes forwarding and provisions remote integration. The caller
-// owns the local protocol server and must close the session after use.
-func Open(options Options, token string) (*Session, error) {
+// Open establishes forwarding and provisions remote integration. server is
+// the local clipboard listener; its port may change while Open finds a
+// remote port that is free. The caller owns the server and must close the
+// session after use.
+func Open(options Options, token string, server *protocol.Server) (*Session, error) {
 	sshPath, err := exec.LookPath("ssh")
 	if err != nil {
 		return nil, fmt.Errorf("ssh not found on PATH: %w", err)
@@ -63,7 +62,7 @@ func Open(options Options, token string) (*Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	close, params, err := establishSession(sshPath, host, native, token)
+	close, params, err := establishSession(sshPath, host, native, token, server)
 	if err != nil {
 		return nil, err
 	}
@@ -87,13 +86,13 @@ func (s *Session) Close() { s.close() }
 func (s *Session) Environment() remote.Environment {
 	return remote.Environment{
 		ControlPath: s.params.controlPath, Token: s.params.token,
-		Port: s.options.protocolPort, AgentSocket: s.params.agentSocket,
+		Port: s.params.remotePort, AgentSocket: s.params.agentSocket,
 	}
 }
 
 // Probe executes a remote script through the held connection with shim exports.
 func (s *Session) Probe(script string) (string, error) {
-	prefix := remote.EnvPrefix(s.params.token) + fmt.Sprintf("SLUSH_PORT=%d ", s.options.protocolPort)
+	prefix := remote.EnvPrefix(remote.Environment{Token: s.params.token, Port: s.params.remotePort})
 	return remote.SSHExec(s.sshPath, s.host, prefix+script, nil,
 		append([]string{"-o", "ControlMaster=no", "-S", s.params.controlPath}, s.options.connOpts...))
 }
@@ -105,7 +104,7 @@ func (s *Session) Transport() Transport { return s.options.mode }
 // environment wrapper. It does not execute the command.
 func (s *Session) WrappedCommand(command string) (string, error) {
 	if s.options.mode == Mosh {
-		wrapped := remote.MoshCommand([]string{"sh", "-c", command}, remote.Environment{Token: s.params.token})
+		wrapped := remote.MoshCommand([]string{"sh", "-c", command}, remote.Environment{Token: s.params.token, Port: s.params.remotePort})
 		quoted := make([]string, len(wrapped)-3)
 		for i, arg := range wrapped[3:] {
 			quoted[i] = remote.ShellQuote(arg)
@@ -116,7 +115,7 @@ func (s *Session) WrappedCommand(command string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	wrapped, _, err := withRemoteEnvSSH(append(head, command), s.params.token)
+	wrapped, _, err := withRemoteEnvSSH(append(head, command), s.params)
 	if err != nil {
 		return "", err
 	}
@@ -175,7 +174,7 @@ func (s *Session) runClient(path string) (int, error) {
 }
 
 func (s *Session) sshClientArgs() ([]string, error) {
-	clientArgs, interactive, err := withRemoteEnvSSH(s.options.args, s.params.token)
+	clientArgs, interactive, err := withRemoteEnvSSH(s.options.args, s.params)
 	if err != nil {
 		return nil, err
 	}

@@ -134,7 +134,7 @@ func TestWithRemoteEnvSSH(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, interactive, err := withRemoteEnvSSH(tt.in, "tok123")
+			got, interactive, err := withRemoteEnvSSH(tt.in, sessionParams{token: "tok123", remotePort: 2489})
 			if tt.wantErr != "" {
 				require.EqualError(t, err, tt.wantErr)
 				return
@@ -143,6 +143,7 @@ func TestWithRemoteEnvSSH(t *testing.T) {
 			assert.Equal(t, tt.interactive, interactive)
 			assert.Equal(t, tt.wantHead, got[:len(tt.wantHead)])
 			joined := strings.Join(got, " ")
+			assert.Contains(t, joined, "SLUSH_PORT=2489")
 			for _, want := range tt.wantContains {
 				assert.Contains(t, joined, want)
 			}
@@ -186,7 +187,7 @@ func TestWithRemoteEnvMosh(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := withRemoteEnvMosh(tt.in, sessionParams{token: "tok123"})
+			got, err := withRemoteEnvMosh(tt.in, sessionParams{token: "tok123", remotePort: 2489})
 			if tt.wantErr != "" {
 				require.EqualError(t, err, tt.wantErr)
 				return
@@ -196,6 +197,7 @@ func TestWithRemoteEnvMosh(t *testing.T) {
 			// The wrapper script always carries the session env.
 			assert.Contains(t, got[len(tt.want)], "SLUSH=1")
 			assert.Contains(t, got[len(tt.want)], "SLUSH_TOKEN=tok123")
+			assert.Contains(t, got[len(tt.want)], "SLUSH_PORT=2489")
 		})
 	}
 }
@@ -215,58 +217,6 @@ func TestWithRemoteEnvMoshCommandTail(t *testing.T) {
 func TestWithSSHControlPath(t *testing.T) {
 	got := withSSHControlPath([]string{"user@host"}, sessionParams{controlPath: "/tmp/c"})
 	assert.Equal(t, []string{"-o", "ControlPath=/tmp/c", "user@host"}, got)
-}
-
-func TestWithReverseTunnel(t *testing.T) {
-	tests := []struct {
-		name string
-		in   []string
-		want []string
-	}{
-		{
-			name: "injects when missing",
-			in:   []string{"user@host"},
-			want: []string{"-R", clipboardReverseTunnel, "user@host"},
-		},
-		{
-			name: "skips when separate -R already present",
-			in:   []string{"-R", clipboardReverseTunnel, "user@host"},
-			want: []string{"-R", clipboardReverseTunnel, "user@host"},
-		},
-		{
-			name: "skips when combined -R already present",
-			in:   []string{"-R" + clipboardReverseTunnel, "user@host"},
-			want: []string{"-R" + clipboardReverseTunnel, "user@host"},
-		},
-		{
-			name: "injects when different -R present",
-			in:   []string{"-R", "2222:127.0.0.1:22", "user@host"},
-			want: []string{"-R", clipboardReverseTunnel, "-R", "2222:127.0.0.1:22", "user@host"},
-		},
-		{
-			name: "preserves -L forwards",
-			in:   []string{"-L", "8080:127.0.0.1:8080", "user@host"},
-			want: []string{"-R", clipboardReverseTunnel, "-L", "8080:127.0.0.1:8080", "user@host"},
-		},
-		{
-			name: "empty args",
-			in:   nil,
-			want: []string{"-R", clipboardReverseTunnel},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := withReverseTunnel(tt.in)
-			assert.Equal(t, tt.want, got)
-		})
-	}
-}
-
-func TestWithReverseTunnelDoesNotMutateInput(t *testing.T) {
-	in := []string{"user@host"}
-	_ = withReverseTunnel(in)
-	assert.Equal(t, []string{"user@host"}, in)
 }
 
 func TestMoshDestination(t *testing.T) {

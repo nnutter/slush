@@ -2,8 +2,8 @@
 """slush remote endpoint: clipboard/open client over the slush tunnel.
 
 Installed as argv[0]-dispatched symlinks (pbcopy, wl-paste, xdg-open,
-...); forwards to the clipboard server at 127.0.0.1:PORT using the
-session token from $SLUSH_TOKEN (or the provisioned env file).
+...); forwards to the clipboard server at 127.0.0.1:$SLUSH_PORT
+using the session token from $SLUSH_TOKEN (or the provisioned env file).
 """
 import os
 import socket

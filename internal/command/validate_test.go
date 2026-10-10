@@ -48,21 +48,13 @@ for arg in "$@"; do
     if [ "$arg" = "exit" ]; then
       exit 0
     fi
+` + fakeClipboardForward + `
     exit 1
   fi
 done
 
 if [ -n "$is_master" ]; then
-  saw_tunnel=
-  prev=
-  for arg in "$@"; do
-    if [ "$prev" = "-R" ] && [ "$arg" = "2489:127.0.0.1:2489" ]; then
-      saw_tunnel=1
-    fi
-    prev=
-    if [ "$arg" = "-R" ]; then prev=-R; fi
-  done
-  if [ -z "$saw_tunnel" ] || [ -z "$controlpath" ]; then
+  if [ -z "$controlpath" ]; then
     echo "unexpected master args: $*" >&2
     exit 1
   fi
@@ -127,7 +119,7 @@ func TestRunValidateEndToEnd(t *testing.T) {
 	if _, err := exec.LookPath("python3"); err != nil {
 		t.Skip("python3 not on PATH")
 	}
-	useEphemeralClipboardPort(t)
+	trackClipboardPorts(t)
 
 	binDir := t.TempDir()
 	writeFakeValidateSSH(t, binDir)
@@ -135,6 +127,7 @@ func TestRunValidateEndToEnd(t *testing.T) {
 
 	code := run([]string{"validate", "user@host"})
 	assert.Equal(t, 0, code)
+	requireTrackedPortsReleased(t, 1)
 
 	// Provisioning really landed in the isolated HOME.
 	version, err := os.ReadFile(filepath.Join(os.Getenv("FAKE_HOME"), ".cache", "slush", "VERSION"))
@@ -149,7 +142,7 @@ func TestRunValidateEndToEndMosh(t *testing.T) {
 	if _, err := exec.LookPath("python3"); err != nil {
 		t.Skip("python3 not on PATH")
 	}
-	useEphemeralClipboardPort(t)
+	trackClipboardPorts(t)
 
 	binDir := t.TempDir()
 	writeFakeValidateSSH(t, binDir)
@@ -157,10 +150,10 @@ func TestRunValidateEndToEndMosh(t *testing.T) {
 
 	code := run([]string{"--transport", "mosh", "validate", "user@host"})
 	assert.Equal(t, 0, code)
+	requireTrackedPortsReleased(t, 1)
 }
 
 func TestRunValidateUsage(t *testing.T) {
-	useEphemeralClipboardPort(t)
 	code := run([]string{"validate"})
 	assert.Equal(t, 1, code)
 }

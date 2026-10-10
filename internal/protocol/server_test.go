@@ -306,6 +306,21 @@ func TestClipboardLinuxBackendFallback(t *testing.T) {
 	assert.Equal(t, payload, gotBody)
 }
 
+func TestEphemeralServersListenTogether(t *testing.T) {
+	first, err := StartServer(0, "token-a")
+	require.NoError(t, err)
+	t.Cleanup(first.Stop)
+	second, err := StartServer(0, "token-b")
+	require.NoError(t, err)
+	t.Cleanup(second.Stop)
+
+	assert.Positive(t, first.Port())
+	assert.NotEqual(t, first.Port(), second.Port())
+	conn, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(second.Port())), 5*time.Second)
+	require.NoError(t, err)
+	require.NoError(t, conn.Close())
+}
+
 func writeFakeClipTool(t *testing.T, dir, name, body string) {
 	t.Helper()
 	script := "#!/bin/sh\n" + body + "\n"

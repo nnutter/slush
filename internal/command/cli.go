@@ -11,12 +11,9 @@ import (
 	"charm.land/fang/v2"
 	"github.com/spf13/cobra"
 
-	"github.com/nnutter/slush/internal/protocol"
 	"github.com/nnutter/slush/internal/session"
 	checks "github.com/nnutter/slush/internal/validate"
 )
-
-var clipboardPort = protocol.DefaultPort
 
 // remoteExitError carries a completed remote command's exit status. The remote
 // command already owns its diagnostics, so Fang must not print another error.
@@ -71,7 +68,7 @@ func newCommand() *cobra.Command {
 			Transport: session.Transport(mode), Host: args[0], Command: args[1:],
 			SSHPort: uint16(port), IdentityFile: identity, ConfigFile: config,
 			ForwardAgent: forwardAgent, LocalForwards: local.configuration(),
-			RemoteForwards: remote.configuration(), ProtocolPort: clipboardPort,
+			RemoteForwards: remote.configuration(),
 		}, nil
 	}
 

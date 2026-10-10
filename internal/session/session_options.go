@@ -42,7 +42,6 @@ type Options struct {
 	ForwardAgent   bool
 	LocalForwards  []Forward
 	RemoteForwards []Forward
-	ProtocolPort   int
 }
 
 // sessionOptions holds translated native arguments inside the session package.
@@ -52,7 +51,6 @@ type sessionOptions struct {
 	forwards     []string
 	connOpts     []string
 	forwardAgent bool
-	protocolPort int
 }
 
 func (o Options) nativeOptions() sessionOptions {
@@ -86,6 +84,6 @@ func (o Options) nativeOptions() sessionOptions {
 	}
 	return sessionOptions{
 		mode: o.Transport, args: args, forwards: forwards, connOpts: connOpts,
-		forwardAgent: o.ForwardAgent, protocolPort: o.ProtocolPort,
+		forwardAgent: o.ForwardAgent,
 	}
 }

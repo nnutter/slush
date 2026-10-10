@@ -4,18 +4,21 @@
 works: `slush user@host`, then `pbcopy`, `pbpaste`, and `open` on the
 remote reach your local clipboard and browser.
 
-How it works: slush starts a clipboard server on 127.0.0.1:2489,
-forwards the remote loopback to it with a reverse tunnel, provisions
-clipboard shims into `~/.cache/slush/bin` on the remote, and wraps
-the remote environment (`PATH` shadow, `BROWSER=slush-open`, session
-token) without touching your dotfiles. When the session ends, the
-tunnel and server go with it.
+How it works: slush listens on an ephemeral port on 127.0.0.1 and
+forwards a matching remote loopback port back to that listener. Each
+session gets its own port, so more than one slush can be connected
+at the same time. It provisions clipboard shims into
+`~/.cache/slush/bin` on the remote, and wraps the remote environment
+(`PATH` shadow, `BROWSER=slush-open`, `SLUSH_PORT`, session token)
+without touching your dotfiles. When the session ends, the tunnel
+and server go with it.
 
 The default `--transport auto` selects [Mosh](https://mosh.org) when local `mosh` and remote `mosh-server` are available; otherwise, it selects SSH.
 Use `--transport ssh` to force SSH, or `--transport mosh` to force Mosh without fallback.
 Authentication failures, connection failures, and failed availability probes are errors, not reasons to fall back.
 Once Mosh starts, slush does not retry a failed session over SSH or execute the remote command again.
-Both transports use a held SSH ControlMaster with `-R 2489:127.0.0.1:2489`.
+Both transports use a held SSH ControlMaster. After it is up, slush
+adds a reverse forward for that session's clipboard port.
 `validate` uses the same automatic selection and supports the same explicit transport options.
 Slush owns its options and uses the same connection and forwarding settings for both transports.
 Use `--help`, `--version`, or `completion` for CLI help, build information, and shell completions.
@@ -158,17 +161,21 @@ point remote tools at it when they misbehave.
 Programs running on the remote (Herdr, plugins, scripts) can rely
 on this while a slush session is connected:
 
-- `127.0.0.1:2489` speaks the slush clipboard protocol, routed to
-  the local machine. One request per TCP connection:
+- `127.0.0.1:$SLUSH_PORT` speaks the slush clipboard protocol, routed
+  to the local machine. The port is chosen per session, so simultaneous
+  slush connections do not share a listener. One request per TCP connection:
   `SLUSH1 <token> HELLO` → `OK slush-clipboard 1`,
   `SLUSH1 <token> COPY <n>` + bytes → `OK`,
   `SLUSH1 <token> PASTE` → `OK <n>` + bytes,
   `SLUSH1 <token> OPEN <n>` + URL → `OK`.
   Failures answer `ERR <message>`; anything unparsable gets an
   `ERR`, never a hang.
-- The session token is available as `$SLUSH_TOKEN`, and
-  `SLUSH=1` marks a wrapped session. Without them (stray shells), fall back to `~/.cache/slush/slush-env`.
-- Detecting slush: send `SLUSH1 x HELLO` and look for the `OK`/`ERR`
-  shape, or probe for the listener without handshaking (bind
-  attempt, `lsof`, `ss -ltn`). A bare TCP connect is harmless but
-  proves nothing.
+- The session token is `$SLUSH_TOKEN`, the clipboard port is
+  `$SLUSH_PORT`, and `SLUSH=1` marks a wrapped session. Shells started
+  by that session keep those values. A shell that has neither variable
+  falls back to `~/.cache/slush/slush-env`, which records the newest
+  session on that remote account.
+- Detecting slush: send `SLUSH1 x HELLO` to `127.0.0.1:$SLUSH_PORT` and
+  look for the `OK`/`ERR` shape, or probe for that listener without
+  handshaking (bind attempt, `lsof`, `ss -ltn`). A bare TCP connect is
+  harmless but proves nothing.

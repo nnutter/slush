@@ -1,6 +1,10 @@
 [tools]
 go = "1.27.1"
 
+[settings]
+# Keep the Go executable and GOROOT on the same configured toolchain.
+activate_aggressive = true
+
 #####################
 # Development Tasks #
 #####################

@@ -36,6 +36,25 @@ Use `slush -- validate` to connect to a host literally named `validate`.
 
 Clipboard forwarding needs `python3` on the remote (for the shims).
 
+## Shell completion
+
+Generate a completion script with `slush completion bash`, `slush completion zsh`, `slush completion fish`, or `slush completion powershell`.
+For example, enable completion in the current Bash session:
+
+```sh
+source <(slush completion bash)
+```
+
+Host completion works for both `slush` and `slush validate`, including a typed username such as `alice@`.
+Suggestions combine literal `Host` aliases from `~/.ssh/config` and its `Include` files with readable hosts from `~/.ssh/known_hosts`.
+Use `-F` to select a different config file for alias suggestions.
+Relative include paths resolve from `~/.ssh`, as in OpenSSH.
+Completion collects aliases without evaluating `Host` or `Match` conditions or executing commands.
+Wildcard aliases, negated aliases, hashed hosts, and revoked known-host entries are not suggested.
+Hosts stored as `[host]:port` appear as `host` only, so use SSH config or `-p` to select the port.
+Missing or unreadable files do not prevent completion from using other sources.
+Host suggestions stop after the host argument.
+
 ## Port forwards
 
 Use `-L`/`--local-forward` to listen locally and connect from the remote machine.

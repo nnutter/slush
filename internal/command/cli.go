@@ -76,10 +76,11 @@ func newCommand() *cobra.Command {
 	}
 
 	root := &cobra.Command{
-		Use:   "slush [options] [user@]host [command...]",
-		Short: "SSH or mosh sessions with clipboard and URL forwarding",
-		Long:  "Connect with SSH or mosh using the same connection and forwarding options.\nFlags after the host belong to the remote command, not slush.\nForward shorthand: PORT, PORT:PORT, PORT:HOST:PORT, or BIND:PORT:HOST:PORT.\nOmitted addresses mean localhost. A single port is used at both ends.\nBracket IPv6 addresses. Repeat -L or -R for multiple forwards.",
-		Args:  requireHost,
+		Use:               "slush [options] [user@]host [command...]",
+		Short:             "SSH or mosh sessions with clipboard and URL forwarding",
+		Long:              "Connect with SSH or mosh using the same connection and forwarding options.\nFlags after the host belong to the remote command, not slush.\nForward shorthand: PORT, PORT:PORT, PORT:HOST:PORT, or BIND:PORT:HOST:PORT.\nOmitted addresses mean localhost. A single port is used at both ends.\nBracket IPv6 addresses. Repeat -L or -R for multiple forwards.",
+		Args:              requireHost,
+		ValidArgsFunction: completeHost,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			request, err := options(cmd, args)
 			if err != nil {
@@ -104,9 +105,10 @@ func newCommand() *cobra.Command {
 	_ = root.MarkPersistentFlagFilename("config")
 
 	validate := &cobra.Command{
-		Use:   "validate [options] [user@]host",
-		Short: "Check provisioning, clipboard forwarding, and session integration",
-		Args:  requireValidationHost,
+		Use:               "validate [options] [user@]host",
+		Short:             "Check provisioning, clipboard forwarding, and session integration",
+		Args:              requireValidationHost,
+		ValidArgsFunction: completeHost,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			request, err := options(cmd, args)
 			if err != nil {

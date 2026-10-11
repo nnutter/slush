@@ -8,9 +8,10 @@ import (
 )
 
 func TestRemoteEnvPrefix(t *testing.T) {
-	prefix := EnvPrefix("tok123")
+	prefix := EnvPrefix(Environment{Token: "tok123", Port: 2489})
 	assert.Contains(t, prefix, "SLUSH=1")
 	assert.Contains(t, prefix, "SLUSH_TOKEN=tok123")
+	assert.Contains(t, prefix, "SLUSH_PORT=2489")
 	assert.Contains(t, prefix, "BROWSER=slush-open")
 	assert.Contains(t, prefix, "PATH=")
 	assert.Contains(t, prefix, "/slush/bin")

@@ -33,7 +33,7 @@ func TestTransportSelection(t *testing.T) {
 		{name: "Mosh failure never retries", mode: "auto", localMosh: true, remoteMosh: true, wantClient: "mosh", moshExit: 42, wantExit: 42},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			useEphemeralClipboardPort(t)
+			trackClipboardPorts(t)
 			bin := t.TempDir()
 			remoteBin := t.TempDir()
 			if test.remoteMosh {
@@ -82,7 +82,7 @@ exec `+remote.ShellQuote(sshSession)+` "$@"`)
 				require.NoError(t, readErr)
 				assert.Equal(t, test.wantClient+"\n", string(clients))
 			}
-			requirePortFree(t, clipboardPort)
+			requireTrackedPortsReleased(t, 1)
 		})
 	}
 }

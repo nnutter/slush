@@ -8,11 +8,6 @@ import (
 	"github.com/nnutter/slush/internal/remote"
 )
 
-// clipboardReverseTunnel is OpenSSH -R syntax:
-// [bind_address:]port:host:hostport with an implicit bind on the
-// remote side. It carries the clipboard protocol to the local server.
-const clipboardReverseTunnel = "2489:127.0.0.1:2489"
-
 // sshHostOperand returns the [user@]host operand from ssh-style args,
 // skipping flags (and their arguments) as well as -L/-R forwards.
 func sshHostOperand(args []string) (string, error) {
@@ -36,12 +31,12 @@ func splitSSHRemoteCommand(args []string) (head, cmd []string, err error) {
 // withRemoteEnvSSH wraps the remote command (or a fresh login shell
 // when the user gave none) with the slush session environment.
 // It reports whether the session is interactive (no user command).
-func withRemoteEnvSSH(rest []string, token string) ([]string, bool, error) {
+func withRemoteEnvSSH(rest []string, params sessionParams) ([]string, bool, error) {
 	head, cmd, err := splitSSHRemoteCommand(rest)
 	if err != nil {
 		return nil, false, err
 	}
-	script, interactive := remote.SSHCommand(cmd, token)
+	script, interactive := remote.SSHCommand(cmd, remote.Environment{Token: params.token, Port: params.remotePort})
 	wrapped := make([]string, len(head)+1)
 	copy(wrapped, head)
 	wrapped[len(head)] = script
@@ -112,51 +107,8 @@ func withSSHControlPath(args []string, params sessionParams) []string {
 	return slices.Concat([]string{"-o", "ControlPath=" + params.controlPath}, args)
 }
 
-// withReverseTunnel returns args with the clipboard reverse tunnel
-// injected unless an identical -R tunnel is already present.
-func withReverseTunnel(args []string) []string {
-	if hasSSHForward(args, "-R", clipboardReverseTunnel) {
-		return slices.Clone(args)
-	}
-	return slices.Concat([]string{"-R", clipboardReverseTunnel}, args)
-}
-
-func hasSSHForward(args []string, flag, spec string) bool {
-	for i := 0; i < len(args); i++ {
-		arg := args[i]
-		switch {
-		case arg == flag:
-			if matchesNextArgument(args, i, spec) {
-				return true
-			}
-			i++
-		case isCombinedShortTunnel(arg, flag, spec):
-			return true
-		}
-	}
-	return false
-}
-
-func isCombinedShortTunnel(arg, flag, tunnel string) bool {
-	if len(arg) <= len(flag) {
-		return false
-	}
-	after, found := strings.CutPrefix(arg, flag)
-	if !found {
-		return false
-	}
-	return after == tunnel
-}
-
 func hasNextArgument(args []string, index int) bool {
 	return index+1 < len(args)
-}
-
-func matchesNextArgument(args []string, index int, value string) bool {
-	if !hasNextArgument(args, index) {
-		return false
-	}
-	return args[index+1] == value
 }
 
 // moshDestination returns the [user@]host operand from mosh-style args.
@@ -199,7 +151,7 @@ func withRemoteEnvMosh(args []string, params sessionParams) ([]string, error) {
 		return nil, err
 	}
 	out := append(pre, "--", host)
-	return append(out, remote.MoshCommand(cmd, remote.Environment{Token: params.token, AgentSocket: params.agentSocket})...), nil
+	return append(out, remote.MoshCommand(cmd, remote.Environment{Token: params.token, Port: params.remotePort, AgentSocket: params.agentSocket})...), nil
 }
 
 // destinationHostAt is destinationHost that also reports the host's

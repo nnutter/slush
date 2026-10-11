@@ -9,14 +9,10 @@ The suite does not emulate slush's protocol, provisioning, SSH, or mosh.
 | Client | Server | Environment |
 | --- | --- | --- |
 | Linux | Linux | Ubuntu runner and an Ubuntu Docker container |
-| macOS | macOS | macOS runner and an isolated local sshd |
-| macOS | Linux | macOS runner and an Ubuntu QEMU guest |
-| Linux | macOS | Ubuntu QEMU guest and the macOS runner |
+| macOS | macOS | macOS 15 Intel and macOS 26 runners, each with an isolated local sshd |
 
 Each pair runs through both transports, and every job is gating.
-The macOS-to-macOS pair shares a kernel and loopback network; the heterogeneous pairs provide independent kernels and exercise the reverse SSH connection across the guest network.
-The Linux guest uses software emulation, not nested hardware virtualization or publicly reachable runners.
-Guest boot and package installation can take approximately 15 minutes.
+Each pair shares a kernel and uses the loopback network.
 
 ## Protected behavior
 
@@ -49,9 +45,8 @@ It does not fake SSH responses or edit the user's SSH configuration.
 For the connection-loss regression, it terminates the actual held master immediately before the availability probe.
 The Mosh launcher records starts and then execs the real Mosh executable.
 Native servers have a separate SSH-only account whose PATH mirrors real server tools through symlinks under `/tmp`, but excludes `mosh-server`.
-The Linux guest is disposable and receives its own cloud-init configuration.
 
-The workflow prints the server and guest boot logs during cleanup.
+The workflow prints the server log during cleanup.
 The suite prints terminal output and its fixture directory, and fails on a bounded session timeout rather than waiting indefinitely.
 
 To run the suite against an existing test endpoint, supply an absolute slush binary path, an isolated SSH configuration, a host alias, and a transport:

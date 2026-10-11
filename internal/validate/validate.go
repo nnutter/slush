@@ -56,29 +56,26 @@ func Run(options session.Options, out io.Writer) error {
 	}
 	v := &validator{out: out}
 
-	if err := protocol.EnsurePortFree(options.ProtocolPort); err != nil {
-		v.fail("clipboard server", err.Error())
-		return fmt.Errorf("1 check failed")
-	}
-	server, err := protocol.StartServer(options.ProtocolPort, token)
+	server, err := protocol.StartServer(0, token)
 	if err != nil {
 		v.fail("clipboard server", err.Error())
 		return fmt.Errorf("1 check failed")
 	}
 	defer server.Stop()
-	v.ok(fmt.Sprintf("clipboard server on 127.0.0.1:%d", options.ProtocolPort))
 
 	_, err = exec.LookPath("ssh")
 	if err != nil {
 		v.fail("tunnel", "ssh not found on PATH")
 		return fmt.Errorf("1 check failed")
 	}
-	connection, err := session.Open(options, token)
+	connection, err := session.Open(options, token, server)
 	if err != nil {
 		v.fail("tunnel", err.Error())
 		return fmt.Errorf("1 check failed")
 	}
 	defer connection.Close()
+	port := server.Port()
+	v.ok(fmt.Sprintf("clipboard server on 127.0.0.1:%d", port))
 	v.ok("tunnel with clipboard forward")
 
 	probe := connection.Probe
@@ -87,9 +84,9 @@ func Run(options session.Options, out io.Writer) error {
 		checkAgent(v, probe)
 	}
 	checkShims(v, probe)
-	checkTransport(v, probe, options.ProtocolPort)
+	checkTransport(v, probe, port)
 	checkSessionEnv(v, connection)
-	checkClipboardRoundTrips(v, probe, options.ProtocolPort, token)
+	checkClipboardRoundTrips(v, probe, port, token)
 	checkOpen(v, probe)
 
 	// Platform report.

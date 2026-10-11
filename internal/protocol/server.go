@@ -46,7 +46,8 @@ func portIsBound(port int) bool {
 }
 
 const (
-	// DefaultPort is the loopback port used by slush sessions.
+	// DefaultPort is the shim fallback when a session has not published
+	// SLUSH_PORT. Sessions themselves listen on an ephemeral port.
 	DefaultPort = 2489
 
 	clipboardMagic   = "SLUSH1"
@@ -66,6 +67,7 @@ const (
 type Server struct {
 	listener net.Listener
 	token    string
+	port     int
 }
 
 // EnsurePortFree returns an error if port cannot be bound. It binds rather
@@ -78,20 +80,70 @@ func EnsurePortFree(port int) error {
 }
 
 // StartServer listens on 127.0.0.1:port and serves the clipboard protocol
-// until Stop is called.
+// until Stop is called. Port 0 asks the kernel for an ephemeral port;
+// Port reports the bound port.
 func StartServer(port int, token string) (*Server, error) {
 	ln, err := net.Listen("tcp", "127.0.0.1:"+strconv.Itoa(port))
 	if err != nil {
 		return nil, fmt.Errorf("listen clipboard on 127.0.0.1:%d: %w", port, err)
 	}
-	server := &Server{listener: ln, token: token}
-	go server.serve()
+	bound, err := listenerPort(ln)
+	if err != nil {
+		_ = ln.Close()
+		return nil, err
+	}
+	server := &Server{listener: ln, token: token, port: bound}
+	go server.serve(ln)
 	return server, nil
+}
+
+// Port returns the loopback port the server is listening on.
+func (s *Server) Port() int {
+	if s == nil {
+		return 0
+	}
+	return s.port
+}
+
+// Relisten replaces the listener with a new ephemeral port and serves it.
+// The previous port is closed. Use this when the remote side cannot bind
+// the current port.
+func (s *Server) Relisten() error {
+	if s == nil {
+		return fmt.Errorf("relisten clipboard: no server")
+	}
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return fmt.Errorf("listen clipboard on 127.0.0.1:0: %w", err)
+	}
+	bound, err := listenerPort(ln)
+	if err != nil {
+		_ = ln.Close()
+		return err
+	}
+	old := s.listener
+	s.listener = ln
+	s.port = bound
+	_ = old.Close()
+	go s.serve(ln)
+	return nil
+}
+
+func listenerPort(ln net.Listener) (int, error) {
+	_, portStr, err := net.SplitHostPort(ln.Addr().String())
+	if err != nil {
+		return 0, fmt.Errorf("clipboard port: %w", err)
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		return 0, fmt.Errorf("clipboard port: %w", err)
+	}
+	return port, nil
 }
 
 // Stop terminates the clipboard server listener.
 func (s *Server) Stop() {
-	if s == nil {
+	if s == nil || s.listener == nil {
 		return
 	}
 	_ = s.listener.Close()
@@ -162,9 +214,9 @@ func executeClipboardPayload(conn net.Conn, reader *bufio.Reader, length int, op
 	writeResponse(conn, "OK")
 }
 
-func (s *Server) serve() {
+func (s *Server) serve(ln net.Listener) {
 	for {
-		conn, err := s.listener.Accept()
+		conn, err := ln.Accept()
 		if err != nil {
 			return
 		}

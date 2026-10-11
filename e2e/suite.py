@@ -12,6 +12,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import select
 import shlex
 import shutil
@@ -209,13 +210,26 @@ def python_command(script):
     return "python3 -c " + shlex.quote(script)
 
 
+def session_port(output):
+    found = re.findall(r"SLUSH_LISTEN (\d+)", output)
+    assert found, "session did not report SLUSH_PORT\n" + output
+    return int(found[-1])
+
+
+def assert_listener_closed(output):
+    # Listener teardown must occur before slush exits, not eventually.
+    port = session_port(output)
+    with socket.socket() as conn:
+        assert conn.connect_ex(("127.0.0.1", port)) != 0, "orphaned local server on %d" % port
+
+
 def checked(script):
-    code, output = session(python_command(script + '\nprint("SLUSH_E2E_PASS", flush=True)'))
+    code, output = session(python_command(
+        "import os\nprint('SLUSH_LISTEN', os.environ['SLUSH_PORT'], flush=True)\n"
+        + script + '\nprint("SLUSH_E2E_PASS", flush=True)'))
     assert code == 0 and "SLUSH_E2E_PASS" in output, (code, output)
     assert "continuing without clipboard forwarding" not in output, output
-    # Listener teardown must occur before slush exits, not eventually.
-    with socket.socket() as s:
-        assert s.connect_ex(("127.0.0.1", 2489)) != 0, "orphaned local server"
+    assert_listener_closed(output)
     return output
 
 
@@ -242,7 +256,7 @@ assert subprocess.run(['slush-open', '/tmp/remote-only-file']).returncode != 0
 assert subprocess.check_output(['slush-open', '--dry-run', 'https://example.com/dry']).strip() == b'OPEN https://example.com/dry'
 # An incorrect token must fail, and must not poison the next valid request.
 for token, expected in [('wrong-token', b'ERR'), (os.environ['SLUSH_TOKEN'], b'OK')]:
-    with socket.create_connection(('127.0.0.1', 2489), timeout=5) as conn:
+    with socket.create_connection(('127.0.0.1', int(os.environ['SLUSH_PORT'])), timeout=5) as conn:
         conn.sendall(('SLUSH1 ' + token + ' HELLO\\n').encode())
         assert conn.recv(4096).startswith(expected)
 '''.replace("PAYLOAD", REMOTE_PAYLOAD)
@@ -365,11 +379,12 @@ print('FORWARD_PASS', flush=True)
         if not stopped[0] and b'SIGNAL_READY' in output:
             os.kill(pid, signal.SIGTERM)
             stopped[0] = True
-    session(python_command("import time\nprint('SIGNAL_READY', flush=True)\ntime.sleep(60)"),
-            extra=('-R', '39093:127.0.0.1:9'), timeout=30, tick=stop_tick)
+    _status, output = session(python_command(
+        "import os, time\nprint('SLUSH_LISTEN', os.environ['SLUSH_PORT'], flush=True)\n"
+        "print('SIGNAL_READY', flush=True)\ntime.sleep(60)"),
+        extra=('-R', '39093:127.0.0.1:9'), timeout=30, tick=stop_tick)
     assert stopped[0]
-    with socket.socket() as conn:
-        assert conn.connect_ex(('127.0.0.1', 2489)) != 0, 'orphan after SIGTERM'
+    assert_listener_closed(output)
     checked("import socket\nwith socket.socket() as listener:\n    listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)\n    listener.bind(('127.0.0.1', 39093))")
     if MODE == "ssh":
         code, output = session("exit 37")

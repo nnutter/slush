@@ -143,7 +143,10 @@ func listenerPort(ln net.Listener) (int, error) {
 
 // Stop terminates the clipboard server listener.
 func (s *Server) Stop() {
-	if s == nil || s.listener == nil {
+	if s == nil {
+		return
+	}
+	if s.listener == nil {
 		return
 	}
 	_ = s.listener.Close()

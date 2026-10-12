@@ -35,7 +35,7 @@ slush validate --transport mosh user@host
 Otherwise, SSH configuration supplies connection defaults.
 Slush rejects unknown flags before the host instead of passing them to a native client.
 Arguments after the host form a remote shell command and are not parsed as slush options.
-Use `slush -- validate` to connect to a host literally named `validate`.
+Use `slush -- validate` or `slush -- install` to connect to a host literally named `validate` or `install`.
 
 Clipboard forwarding needs `python3` on the remote (for the shims).
 
@@ -48,7 +48,7 @@ For example, enable completion in the current Bash session:
 source <(slush completion bash)
 ```
 
-Host completion works for both `slush` and `slush validate`, including a typed username such as `alice@`.
+Host completion works for `slush`, `slush validate`, and `slush install`, including a typed username such as `alice@`.
 Suggestions combine literal `Host` aliases from `~/.ssh/config` and its `Include` files with readable hosts from `~/.ssh/known_hosts`.
 Use `-F` to select a different config file for alias suggestions.
 Relative include paths resolve from `~/.ssh`, as in OpenSSH.
@@ -138,6 +138,38 @@ connection independently.
 
 `http://localhost:port` URLs open as-is on the client, so pair
 them with your own `-L` forward when the service lives remotely.
+
+## Install wrappers for existing remote servers
+
+Use `install` when a remote server, such as Herdr, started before your slush connection.
+The command installs the clipboard and URL wrappers directly into a directory you choose:
+
+```sh
+slush install user@host '~/.local/bin'
+slush install -p 2222 -i ./key user@host '~/.local/bin'
+```
+
+Quote `~/.local/bin` so your local shell does not expand it.
+Slush expands `~` and `~/` against `HOME` on the remote host.
+Named-user paths such as `~otheruser/bin` are not supported.
+Absolute paths are used directly, and relative paths resolve from the remote SSH command's working directory.
+Spaces, quotes, and shell syntax in the remaining path are treated literally.
+
+Installation requires remote Python 3 and uses SSH, including connection options `-p`, `-i`, and `-F`.
+It creates the directory if needed and replaces existing command names, so choose a directory reserved for these wrappers.
+It does not change startup files, session credentials, or the server's environment.
+Transport and forwarding options (`--transport`, `-A`, `-L`, `-R`) are not supported by `install`.
+
+The directory must already be on the existing server's `PATH`, or you must configure the server to use full wrapper paths.
+For browser-aware tools, configure `BROWSER=slush-open` if their environment does not already select that command.
+Installation cannot change the environment of an existing process.
+
+Connect through slush as usual and keep that connection active while you use the remote server.
+Installed wrappers use `SLUSH_TOKEN` and `SLUSH_PORT` from their environment when present.
+Missing values come from the remote session file at `${XDG_CACHE_HOME:-$HOME/.cache}/slush/slush-env`.
+A process without those variables therefore uses the newest slush session for that remote account and cache directory.
+Reconnecting does not require another installation.
+A process with inherited credentials still selects its original session, which can become unavailable after disconnection.
 
 ## Validate
 

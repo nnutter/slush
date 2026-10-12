@@ -87,7 +87,7 @@ func trackedClipboardPorts(t *testing.T) []int {
 	}
 	require.NoError(t, err)
 	var ports []int
-	for _, line := range strings.Fields(string(data)) {
+	for line := range strings.FieldsSeq(string(data)) {
 		port, err := strconv.Atoi(line)
 		require.NoError(t, err)
 		ports = append(ports, port)

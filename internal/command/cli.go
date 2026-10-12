@@ -116,6 +116,8 @@ func newCommand() *cobra.Command {
 	}
 	validate.Flags().SetInterspersed(false)
 	root.AddCommand(validate)
+
+	root.AddCommand(newInstallCommand(options))
 	return root
 }
 

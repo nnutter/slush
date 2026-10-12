@@ -146,6 +146,27 @@ func (t *sshTunnel) checkMaster() error {
 	return cmd.Run()
 }
 
+func (t *sshTunnel) forwardClipboard(port int) error {
+	spec := fmt.Sprintf("%d:127.0.0.1:%d", port, port)
+	cmd := exec.Command(t.sshPath,
+		"-o", "ControlPath="+t.controlPath,
+		"-o", "ControlMaster=no",
+		"-O", "forward",
+		"-R", spec,
+		t.host,
+	)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		detail := strings.TrimSpace(stderr.String())
+		if detail == "" {
+			return fmt.Errorf("open clipboard forward: %w", err)
+		}
+		return fmt.Errorf("open clipboard forward: %s", detail)
+	}
+	return nil
+}
+
 func (t *sshTunnel) hasProcess() bool {
 	if t.cmd == nil {
 		return false
@@ -211,27 +232,6 @@ func bindClipboardForward(tunnel *sshTunnel, server *protocol.Server) error {
 		}
 	}
 	return fmt.Errorf("choose a free clipboard port: %w", last)
-}
-
-func (t *sshTunnel) forwardClipboard(port int) error {
-	spec := fmt.Sprintf("%d:127.0.0.1:%d", port, port)
-	cmd := exec.Command(t.sshPath,
-		"-o", "ControlPath="+t.controlPath,
-		"-o", "ControlMaster=no",
-		"-O", "forward",
-		"-R", spec,
-		t.host,
-	)
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		detail := strings.TrimSpace(stderr.String())
-		if detail == "" {
-			return fmt.Errorf("open clipboard forward: %w", err)
-		}
-		return fmt.Errorf("open clipboard forward: %s", detail)
-	}
-	return nil
 }
 
 // remoteForwardBusy reports OpenSSH's refusal to bind the requested

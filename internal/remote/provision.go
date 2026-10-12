@@ -86,20 +86,14 @@ func writeSessionEnv(sshPath, host string, params Environment) (string, bool, er
 
 // installShims uploads the shim script and links every shim name.
 func installShims(sshPath, host string, params Environment) error {
-	links := make([]string, 0, len(shimNames))
-	for _, name := range shimNames {
-		links = append(links, fmt.Sprintf(`ln -sf slush-shim "$dir/bin/%s" || exit 1`, name))
-	}
 	startupFiles := []string{`mkdir -p "$dir/zsh" || exit 1`}
 	for _, name := range []string{".zshenv", ".zprofile", ".zshrc", ".zlogin"} {
 		contents := strings.ReplaceAll(zshStartup, "__STARTUP_FILE__", name)
 		startupFiles = append(startupFiles, fmt.Sprintf(`printf '%%s' %s > "$dir/zsh/%s" || exit 1`, ShellQuote(contents), name))
 	}
 	script := `dir="` + DirExpr + `"` + "\n" +
-		`mkdir -p "$dir/bin" || exit 1` + "\n" +
-		`cat > "$dir/bin/slush-shim" || exit 1` + "\n" +
-		`chmod +x "$dir/bin/slush-shim" || exit 1` + "\n" +
-		strings.Join(links, "\n") + "\n" +
+		`bin="$dir/bin"` + "\n" +
+		shimInstallScript() +
 		strings.Join(startupFiles, "\n") + "\n" +
 		fmt.Sprintf(`printf '%%s' %s > "$dir/bashrc" || exit 1`, ShellQuote(bashStartup)) + "\n" +
 		fmt.Sprintf(`printf '%%s' %s > "$dir/VERSION" || exit 1`, ShellQuote(Version)) + "\n" +
@@ -113,6 +107,19 @@ func installShims(sshPath, host string, params Environment) error {
 		return fmt.Errorf("unexpected install output: %q", out)
 	}
 	return nil
+}
+
+// shimInstallScript uploads the shared shim and links its command names in $bin.
+func shimInstallScript() string {
+	lines := []string{
+		`mkdir -p "$bin" || exit 1`,
+		`cat > "$bin/slush-shim" || exit 1`,
+		`chmod +x "$bin/slush-shim" || exit 1`,
+	}
+	for _, name := range shimNames {
+		lines = append(lines, fmt.Sprintf(`ln -sf slush-shim "$bin/%s" || exit 1`, name))
+	}
+	return strings.Join(lines, "\n") + "\n"
 }
 
 // runProvisionExec runs script on host via ssh, riding controlPath's

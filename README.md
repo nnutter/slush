@@ -170,6 +170,8 @@ Missing values come from the remote session file at `${XDG_CACHE_HOME:-$HOME/.ca
 A process without those variables therefore uses the newest slush session for that remote account and cache directory.
 Reconnecting does not require another installation.
 A process with inherited credentials still selects its original session, which can become unavailable after disconnection.
+When no token is available or the server cannot be reached, wrappers pass through to the native tool with the same name and arguments.
+`slush-open` has no native namesake and still fails, as do server errors.
 
 ## Validate
 

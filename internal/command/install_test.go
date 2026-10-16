@@ -42,16 +42,18 @@ exec /bin/sh -c "$1"
 	command := newCommand()
 	var output bytes.Buffer
 	command.SetOut(&output)
-	command.SetArgs([]string{"install", "-p", "2222", "-i", identity, "-F", config, "user@host", "~/.local/bin"})
+	command.SetArgs([]string{"install", "-p", "2222", "-i", identity, "-F", config, "user@host"})
 	require.NoError(t, command.Execute())
 	assert.Contains(t, output.String(), "Installed slush wrappers")
+	assert.Contains(t, output.String(), "~/.slush/bin")
+	assert.Contains(t, output.String(), "PATH")
 	args, err := os.ReadFile(log)
 	require.NoError(t, err)
 	assert.Equal(t, []string{
 		"-p", "2222", "-i", identity, "-F", config,
 		"-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "user@host",
 	}, strings.Split(strings.TrimSpace(string(args)), "\n"))
-	cmd := exec.CommandContext(t.Context(), filepath.Join(home, ".local", "bin", "xdg-open"), "--dry-run", "https://example.com")
+	cmd := exec.CommandContext(t.Context(), filepath.Join(home, ".slush", "bin", "xdg-open"), "--dry-run", "https://example.com")
 	out, err := cmd.CombinedOutput()
 	require.NoError(t, err, "%s", out)
 	assert.Equal(t, "OPEN https://example.com\n", string(out))

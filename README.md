@@ -142,25 +142,19 @@ them with your own `-L` forward when the service lives remotely.
 ## Install wrappers for existing remote servers
 
 Use `install` when a remote server, such as Herdr, started before your slush connection.
-The command installs the clipboard and URL wrappers directly into a directory you choose:
+The command installs the clipboard and URL wrappers into `~/.slush/bin`:
 
 ```sh
-slush install user@host '~/.local/bin'
-slush install -p 2222 -i ./key user@host '~/.local/bin'
+slush install user@host
+slush install -p 2222 -i ./key user@host
 ```
 
-Quote `~/.local/bin` so your local shell does not expand it.
-Slush expands `~` and `~/` against `HOME` on the remote host.
-Named-user paths such as `~otheruser/bin` are not supported.
-Absolute paths are used directly, and relative paths resolve from the remote SSH command's working directory.
-Spaces, quotes, and shell syntax in the remaining path are treated literally.
+Prepend `~/.slush/bin` to `PATH` on the remote host so the existing server finds the wrappers.
 
 Installation requires remote Python 3 and uses SSH, including connection options `-p`, `-i`, and `-F`.
-It creates the directory if needed and replaces existing command names, so choose a directory reserved for these wrappers.
+It creates `~/.slush/bin` if needed and replaces existing command names there.
 It does not change startup files, session credentials, or the server's environment.
 Transport and forwarding options (`--transport`, `-A`, `-L`, `-R`) are not supported by `install`.
-
-The directory must already be on the existing server's `PATH`, or you must configure the server to use full wrapper paths.
 For browser-aware tools, configure `BROWSER=slush-open` if their environment does not already select that command.
 Installation cannot change the environment of an existing process.
 

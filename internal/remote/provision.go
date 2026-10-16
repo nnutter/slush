@@ -28,7 +28,7 @@ var bashStartup string
 var zshStartup string
 
 // Version identifies the installed shim and startup assets.
-const Version = "3"
+const Version = "4"
 
 // shimNames are installed as symlinks to the argv[0]-dispatched shim.
 var shimNames = []string{

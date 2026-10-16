@@ -108,6 +108,16 @@ func readExactly(reader *bufio.Reader, buf []byte) (int, error) {
 
 func python3Path(t *testing.T) string {
 	t.Helper()
+	// Skip mise shims: they lose trust when tests override HOME.
+	var filtered []string
+	for dir := range strings.SplitSeq(os.Getenv("PATH"), string(os.PathListSeparator)) {
+		if strings.Contains(dir, "mise/shims") {
+			continue
+		}
+		filtered = append(filtered, dir)
+	}
+	filtered = append(filtered, "/usr/bin", "/usr/local/bin")
+	t.Setenv("PATH", strings.Join(filtered, string(os.PathListSeparator)))
 	path, err := exec.LookPath("python3")
 	if err != nil {
 		t.Skip("python3 not on PATH")

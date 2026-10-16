@@ -20,6 +20,10 @@ OPEN_NAMES = {"xdg-open", "open", "slush-open", "sensible-browser"}
 PASTE_FLAGS = {"-o", "-out", "--output"}
 
 
+class SlushUnavailable(Exception):
+    """Slush credentials are missing or the server is unreachable."""
+
+
 def fail(msg):
     sys.stderr.write("slush: %s\n" % msg)
     sys.exit(1)
@@ -49,11 +53,13 @@ def load_token_port():
         except OSError:
             pass
     if not token:
-        fail("no session token (reconnect with slush, or export SLUSH_TOKEN)")
+        raise SlushUnavailable(
+            "no session token (reconnect with slush, or export SLUSH_TOKEN)"
+        )
     try:
         return token, int(port or DEFAULT_PORT)
     except ValueError:
-        fail("bad SLUSH_PORT %r" % (port,))
+        raise SlushUnavailable("bad SLUSH_PORT %r" % (port,))
 
 
 def exchange(token, port, verb, payload=None):
@@ -65,7 +71,7 @@ def exchange(token, port, verb, payload=None):
     try:
         sock = socket.create_connection(("127.0.0.1", port), timeout=10)
     except OSError as e:
-        fail(
+        raise SlushUnavailable(
             "cannot reach clipboard server on 127.0.0.1:%d: %s "
             "(is slush connected?)" % (port, e)
         )
@@ -131,18 +137,21 @@ def main(argv):
         if "--dry-run" in argv:
             sys.stdout.write("OPEN %s\n" % target)
             return 0
-    token, port = load_token_port()
-    if name in COPY_NAMES:
-        if name in ("xclip", "xsel") and PASTE_FLAGS.intersection(argv[1:]):
+    try:
+        token, port = load_token_port()
+        if name in COPY_NAMES:
+            if name in ("xclip", "xsel") and PASTE_FLAGS.intersection(argv[1:]):
+                do_paste(token, port)
+            else:
+                do_copy(token, port)
+        elif name in PASTE_NAMES:
             do_paste(token, port)
+        elif name in OPEN_NAMES:
+            do_open(token, port, target)
         else:
-            do_copy(token, port)
-    elif name in PASTE_NAMES:
-        do_paste(token, port)
-    elif name in OPEN_NAMES:
-        do_open(token, port, target)
-    else:
-        fail("unknown shim name %r" % (name,))
+            fail("unknown shim name %r" % (name,))
+    except SlushUnavailable as e:
+        fail(str(e))
     return 0
 
 

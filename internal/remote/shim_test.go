@@ -278,6 +278,96 @@ func TestShimCopyFallbackDialFailure(t *testing.T) {
 	assert.Equal(t, "dial fallback", string(contents))
 }
 
+func TestShimPasteFallbackMissingToken(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fixture executes a POSIX shell script")
+	}
+	python3Path(t)
+	fallbackDir := t.TempDir()
+	writeFakeFallback(t, fallbackDir, "pbpaste",
+		"#!/bin/sh\n stof() { printf 'native clipboard'; }; stof\n")
+	code, stdout, stderr := runShimNameWithPath(t, "pbpaste", nil, "", nil,
+		fallbackDir+string(os.PathListSeparator)+"/usr/bin:/bin")
+	require.Equal(t, 0, code, "stderr: %s", stderr)
+	assert.Equal(t, "native clipboard", stdout)
+}
+
+func TestShimXclipPasteFallbackPreservesArgs(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fixture executes a POSIX shell script")
+	}
+	python3Path(t)
+	fallbackDir := t.TempDir()
+	argsFile := filepath.Join(t.TempDir(), "xclip-args")
+	writeFakeFallback(t, fallbackDir, "xclip",
+		"#!/bin/sh\nprintf '%s\\n' \"$@\" > "+strconv.Quote(argsFile)+"\nprintf 'native xclip paste'\n")
+	code, stdout, stderr := runShimNameWithPath(t, "xclip",
+		[]string{"-selection", "clipboard", "-o"}, "", nil,
+		fallbackDir+string(os.PathListSeparator)+"/usr/bin:/bin")
+	require.Equal(t, 0, code, "stderr: %s", stderr)
+	assert.Equal(t, "native xclip paste", stdout)
+	contents, err := os.ReadFile(argsFile)
+	require.NoError(t, err)
+	assert.Contains(t, string(contents), "-selection")
+	assert.Contains(t, string(contents), "-o")
+}
+
+func TestShimOpenFallbackMissingToken(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fixture executes a POSIX shell script")
+	}
+	python3Path(t)
+	fallbackDir := t.TempDir()
+	argsFile := filepath.Join(t.TempDir(), "open-args")
+	writeFakeFallback(t, fallbackDir, "xdg-open",
+		"#!/bin/sh\nprintf '%s\\n' \"$@\" > "+strconv.Quote(argsFile)+"\n")
+	code, _, stderr := runShimNameWithPath(t, "xdg-open",
+		[]string{"https://example.com/native"}, "", nil,
+		fallbackDir+string(os.PathListSeparator)+"/usr/bin:/bin")
+	require.Equal(t, 0, code, "stderr: %s", stderr)
+	contents, err := os.ReadFile(argsFile)
+	require.NoError(t, err)
+	assert.Contains(t, string(contents), "https://example.com/native")
+}
+
+func TestShimSlushOpenHasNoFallback(t *testing.T) {
+	python3Path(t)
+	fallbackDir := t.TempDir()
+	marker := filepath.Join(t.TempDir(), "slush-open-called")
+	writeFakeFallback(t, fallbackDir, "slush-open",
+		"#!/bin/sh\ntouch "+strconv.Quote(marker)+"\n")
+	code, _, stderr := runShimNameWithPath(t, "slush-open",
+		[]string{"https://example.com/x"}, "", nil,
+		fallbackDir+string(os.PathListSeparator)+"/usr/bin:/bin")
+	require.NotEqual(t, 0, code)
+	assert.Contains(t, stderr, "no session token")
+	_, err := os.Stat(marker)
+	require.True(t, os.IsNotExist(err), "slush-open must not pass through")
+}
+
+func TestShimFallbackSkipsWrapperDirs(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fixture executes a POSIX shell script")
+	}
+	python3Path(t)
+	wrapperDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(wrapperDir, "slush-shim"), []byte("#!/bin/sh\n"), 0o755))
+	// A wrapper dir earlier on PATH must be skipped even though it holds pbcopy.
+	writeFakeFallback(t, wrapperDir, "pbcopy",
+		"#!/bin/sh\nexit 99\n")
+	fallbackDir := t.TempDir()
+	outFile := filepath.Join(t.TempDir(), "copy-out")
+	writeFakeFallback(t, fallbackDir, "pbcopy",
+		"#!/bin/sh\ncat > "+strconv.Quote(outFile)+"\n")
+	pathEnv := wrapperDir + string(os.PathListSeparator) + fallbackDir +
+		string(os.PathListSeparator) + "/usr/bin:/bin"
+	code, _, stderr := runShimNameWithPath(t, "pbcopy", nil, "skipped wrappers", nil, pathEnv)
+	require.Equal(t, 0, code, "stderr: %s", stderr)
+	contents, err := os.ReadFile(outFile)
+	require.NoError(t, err)
+	assert.Equal(t, "skipped wrappers", string(contents))
+}
+
 func TestShimUnknownName(t *testing.T) {
 	env := map[string]string{"SLUSH_TOKEN": "test-token", "SLUSH_PORT": "2489"}
 	code, _, stderr := runShimName(t, "not-a-shim", nil, "", env)

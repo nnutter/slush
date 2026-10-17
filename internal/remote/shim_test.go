@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -107,6 +108,16 @@ func readExactly(reader *bufio.Reader, buf []byte) (int, error) {
 
 func python3Path(t *testing.T) string {
 	t.Helper()
+	// Skip mise shims: they lose trust when tests override HOME.
+	var filtered []string
+	for dir := range strings.SplitSeq(os.Getenv("PATH"), string(os.PathListSeparator)) {
+		if strings.Contains(dir, "mise/shims") {
+			continue
+		}
+		filtered = append(filtered, dir)
+	}
+	filtered = append(filtered, "/usr/bin", "/usr/local/bin")
+	t.Setenv("PATH", strings.Join(filtered, string(os.PathListSeparator)))
 	path, err := exec.LookPath("python3")
 	if err != nil {
 		t.Skip("python3 not on PATH")
@@ -116,6 +127,12 @@ func python3Path(t *testing.T) string {
 
 // runShimName links shim.py under name and runs it like the remote would.
 func runShimName(t *testing.T, name string, args []string, stdin string, env map[string]string) (int, string, string) {
+	t.Helper()
+	return runShimNameWithPath(t, name, args, stdin, env, "/usr/bin:/bin")
+}
+
+// runShimNameWithPath links shim.py under name and runs it with PATH=pathEnv.
+func runShimNameWithPath(t *testing.T, name string, args []string, stdin string, env map[string]string, pathEnv string) (int, string, string) {
 	t.Helper()
 	python := python3Path(t)
 
@@ -129,7 +146,7 @@ func runShimName(t *testing.T, name string, args []string, stdin string, env map
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	cmd.Env = []string{"PATH=/usr/bin:/bin", "HOME=" + t.TempDir()}
+	cmd.Env = []string{"PATH=" + pathEnv, "HOME=" + t.TempDir()}
 	for k, v := range env {
 		cmd.Env = append(cmd.Env, k+"="+v)
 	}
@@ -142,6 +159,13 @@ func runShimName(t *testing.T, name string, args []string, stdin string, env map
 		}
 	}
 	return code, stdout.String(), stderr.String()
+}
+
+// writeFakeFallback installs an executable fallback tool that records its invocation.
+func writeFakeFallback(t *testing.T, dir, name, script string) {
+	t.Helper()
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(script), 0o755))
 }
 
 func receiveRequest(t *testing.T, ch chan fakeClipboardRequest) fakeClipboardRequest {
@@ -216,9 +240,142 @@ func TestShimOpenDryRun(t *testing.T) {
 
 func TestShimMissingToken(t *testing.T) {
 	python3Path(t)
-	code, _, stderr := runShimName(t, "pbcopy", nil, "x", nil)
+	// Isolated PATH guarantees no native fallback exists.
+	code, _, stderr := runShimNameWithPath(t, "pbcopy", nil, "x", nil, t.TempDir())
 	require.NotEqual(t, 0, code)
 	assert.Contains(t, stderr, "no session token")
+}
+
+func TestShimCopyFallbackMissingToken(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fixture executes a POSIX shell script")
+	}
+	python3Path(t)
+	fallbackDir := t.TempDir()
+	outFile := filepath.Join(t.TempDir(), "copy-out")
+	argsFile := filepath.Join(t.TempDir(), "copy-args")
+	writeFakeFallback(t, fallbackDir, "pbcopy",
+		"#!/bin/sh\ncat > "+strconv.Quote(outFile)+"\nprintf '%s\\n' \"$@\" > "+strconv.Quote(argsFile)+"\n")
+	code, _, stderr := runShimNameWithPath(t, "pbcopy", nil, "hello native", nil,
+		fallbackDir+string(os.PathListSeparator)+"/usr/bin:/bin")
+	require.Equal(t, 0, code, "stderr: %s", stderr)
+	contents, err := os.ReadFile(outFile)
+	require.NoError(t, err)
+	assert.Equal(t, "hello native", string(contents))
+}
+
+func TestShimCopyFallbackDialFailure(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fixture executes a POSIX shell script")
+	}
+	python3Path(t)
+	// Reserve then close a port so dialing it refuses the connection.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	_, portStr, err := net.SplitHostPort(ln.Addr().String())
+	require.NoError(t, err)
+	require.NoError(t, ln.Close())
+	fallbackDir := t.TempDir()
+	outFile := filepath.Join(t.TempDir(), "copy-out")
+	writeFakeFallback(t, fallbackDir, "wl-copy",
+		"#!/bin/sh\ncat > "+strconv.Quote(outFile)+"\n")
+	env := map[string]string{"SLUSH_TOKEN": "test-token", "SLUSH_PORT": portStr}
+	code, _, stderr := runShimNameWithPath(t, "wl-copy", nil, "dial fallback", env,
+		fallbackDir+string(os.PathListSeparator)+"/usr/bin:/bin")
+	require.Equal(t, 0, code, "stderr: %s", stderr)
+	contents, err := os.ReadFile(outFile)
+	require.NoError(t, err)
+	assert.Equal(t, "dial fallback", string(contents))
+}
+
+func TestShimPasteFallbackMissingToken(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fixture executes a POSIX shell script")
+	}
+	python3Path(t)
+	fallbackDir := t.TempDir()
+	writeFakeFallback(t, fallbackDir, "pbpaste",
+		"#!/bin/sh\n stof() { printf 'native clipboard'; }; stof\n")
+	code, stdout, stderr := runShimNameWithPath(t, "pbpaste", nil, "", nil,
+		fallbackDir+string(os.PathListSeparator)+"/usr/bin:/bin")
+	require.Equal(t, 0, code, "stderr: %s", stderr)
+	assert.Equal(t, "native clipboard", stdout)
+}
+
+func TestShimXclipPasteFallbackPreservesArgs(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fixture executes a POSIX shell script")
+	}
+	python3Path(t)
+	fallbackDir := t.TempDir()
+	argsFile := filepath.Join(t.TempDir(), "xclip-args")
+	writeFakeFallback(t, fallbackDir, "xclip",
+		"#!/bin/sh\nprintf '%s\\n' \"$@\" > "+strconv.Quote(argsFile)+"\nprintf 'native xclip paste'\n")
+	code, stdout, stderr := runShimNameWithPath(t, "xclip",
+		[]string{"-selection", "clipboard", "-o"}, "", nil,
+		fallbackDir+string(os.PathListSeparator)+"/usr/bin:/bin")
+	require.Equal(t, 0, code, "stderr: %s", stderr)
+	assert.Equal(t, "native xclip paste", stdout)
+	contents, err := os.ReadFile(argsFile)
+	require.NoError(t, err)
+	assert.Contains(t, string(contents), "-selection")
+	assert.Contains(t, string(contents), "-o")
+}
+
+func TestShimOpenFallbackMissingToken(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fixture executes a POSIX shell script")
+	}
+	python3Path(t)
+	fallbackDir := t.TempDir()
+	argsFile := filepath.Join(t.TempDir(), "open-args")
+	writeFakeFallback(t, fallbackDir, "xdg-open",
+		"#!/bin/sh\nprintf '%s\\n' \"$@\" > "+strconv.Quote(argsFile)+"\n")
+	code, _, stderr := runShimNameWithPath(t, "xdg-open",
+		[]string{"https://example.com/native"}, "", nil,
+		fallbackDir+string(os.PathListSeparator)+"/usr/bin:/bin")
+	require.Equal(t, 0, code, "stderr: %s", stderr)
+	contents, err := os.ReadFile(argsFile)
+	require.NoError(t, err)
+	assert.Contains(t, string(contents), "https://example.com/native")
+}
+
+func TestShimSlushOpenHasNoFallback(t *testing.T) {
+	python3Path(t)
+	fallbackDir := t.TempDir()
+	marker := filepath.Join(t.TempDir(), "slush-open-called")
+	writeFakeFallback(t, fallbackDir, "slush-open",
+		"#!/bin/sh\ntouch "+strconv.Quote(marker)+"\n")
+	code, _, stderr := runShimNameWithPath(t, "slush-open",
+		[]string{"https://example.com/x"}, "", nil,
+		fallbackDir+string(os.PathListSeparator)+"/usr/bin:/bin")
+	require.NotEqual(t, 0, code)
+	assert.Contains(t, stderr, "no session token")
+	_, err := os.Stat(marker)
+	require.True(t, os.IsNotExist(err), "slush-open must not pass through")
+}
+
+func TestShimFallbackSkipsWrapperDirs(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fixture executes a POSIX shell script")
+	}
+	python3Path(t)
+	wrapperDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(wrapperDir, "slush-shim"), []byte("#!/bin/sh\n"), 0o755))
+	// A wrapper dir earlier on PATH must be skipped even though it holds pbcopy.
+	writeFakeFallback(t, wrapperDir, "pbcopy",
+		"#!/bin/sh\nexit 99\n")
+	fallbackDir := t.TempDir()
+	outFile := filepath.Join(t.TempDir(), "copy-out")
+	writeFakeFallback(t, fallbackDir, "pbcopy",
+		"#!/bin/sh\ncat > "+strconv.Quote(outFile)+"\n")
+	pathEnv := wrapperDir + string(os.PathListSeparator) + fallbackDir +
+		string(os.PathListSeparator) + "/usr/bin:/bin"
+	code, _, stderr := runShimNameWithPath(t, "pbcopy", nil, "skipped wrappers", nil, pathEnv)
+	require.Equal(t, 0, code, "stderr: %s", stderr)
+	contents, err := os.ReadFile(outFile)
+	require.NoError(t, err)
+	assert.Equal(t, "skipped wrappers", string(contents))
 }
 
 func TestShimUnknownName(t *testing.T) {

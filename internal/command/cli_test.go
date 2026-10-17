@@ -24,12 +24,12 @@ func TestCommandRejectsInvalidOptions(t *testing.T) {
 		{"removed mosh shorthand", []string{"--mosh", "host"}, "unknown flag"},
 		{"missing identity", []string{"-i", "does-not-exist", "host"}, "file"},
 		{"validate remote command", []string{"validate", "host", "command"}, "one host"},
-		{"install missing directory", []string{"install", "host"}, "accepts 2 arg"},
-		{"install extra argument", []string{"install", "host", "bin", "extra"}, "accepts 2 arg"},
-		{"install invalid host", []string{"install", "bad host", "bin"}, "invalid host"},
-		{"install transport", []string{"install", "--transport", "mosh", "host", "bin"}, "not supported by install"},
-		{"install agent", []string{"install", "-A", "host", "bin"}, "not supported by install"},
-		{"install forward", []string{"install", "-L", "8080", "host", "bin"}, "not supported by install"},
+		{"install missing host", []string{"install"}, "accepts 1 arg"},
+		{"install extra argument", []string{"install", "host", "extra"}, "accepts 1 arg"},
+		{"install invalid host", []string{"install", "bad host"}, "invalid host"},
+		{"install transport", []string{"install", "--transport", "mosh", "host"}, "not supported by install"},
+		{"install agent", []string{"install", "-A", "host"}, "not supported by install"},
+		{"install forward", []string{"install", "-L", "8080", "host"}, "not supported by install"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			command := newCommand()

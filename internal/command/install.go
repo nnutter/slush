@@ -12,10 +12,10 @@ import (
 
 func newInstallCommand(options func(*cobra.Command, []string) (session.Options, error)) *cobra.Command {
 	install := &cobra.Command{
-		Use:               "install [options] [user@]host directory",
-		Short:             "Install clipboard and URL wrappers in a remote directory",
-		Long:              "Install wrappers without starting a session or changing shell startup files.\nThe directory must be on the remote process PATH. Quote '~/path' to expand ~ remotely.\nExisting wrapper names are replaced. Python 3 is required on the remote host.",
-		Args:              cobra.ExactArgs(2),
+		Use:               "install [options] [user@]host",
+		Short:             "Install clipboard and URL wrappers in ~/.slush/bin",
+		Long:              "Install wrappers without starting a session or changing shell startup files.\nWrappers land in ~/.slush/bin. Prepend that directory to PATH on the remote host.\nExisting wrapper names are replaced. Python 3 is required on the remote host.",
+		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeHost,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			for _, flag := range []string{"transport", "forward-agent", "local-forward", "remote-forward"} {
@@ -41,10 +41,10 @@ func newInstallCommand(options func(*cobra.Command, []string) (session.Options, 
 			if request.ConfigFile != "" {
 				connectionOptions = append(connectionOptions, "-F", request.ConfigFile)
 			}
-			if err := remote.Install(sshPath, request.Host, args[1], connectionOptions); err != nil {
+			if err := remote.Install(sshPath, request.Host, connectionOptions); err != nil {
 				return err
 			}
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "Installed slush wrappers on %s in %s\n", request.Host, args[1])
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "Installed slush wrappers on %s in ~/.slush/bin\nPrepend ~/.slush/bin to PATH on the remote host\n", request.Host)
 			return err
 		},
 	}

@@ -1,0 +1,22 @@
+amends "package://github.com/jdx/hk/releases/download/v2.8.0/hk@2.8.0#/Config.pkl"
+
+hooks {
+  ["commit-msg"] {
+    fix = true
+    steps {
+      ["change-id"] {
+        fix = "git-review commit-msg {{commit_msg_file}}"
+      }
+    }
+  }
+  ["pre-commit"] {
+    fix = true
+    stage = true
+    steps {
+      ["format"] {
+        glob = "**/*.go"
+        fix = "mise run pre-commit {{files}}"
+      }
+    }
+  }
+}

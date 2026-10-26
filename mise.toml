@@ -1,0 +1,343 @@
+[tools]
+go = "1.27.1"
+hk = "2.8.0"
+"ubi:noirbizarre/git-tpl" = "0.13.0"
+"go:github.com/nnutter/git-review" = "0.8.1"
+
+#####################
+# Development Tasks #
+#####################
+
+[tasks.all]
+description = "Run fix, test, and check"
+run = [{ task = "fix" }, { task = "test" }, { task = "check" }]
+
+[tasks.ci-test]
+description = "Run tests (with the race detector)"
+run = "go test -race -shuffle=on ./..."
+
+[tasks.coverage]
+alias = "cover"
+description = "Run tests and generate coverage report"
+run = "go test -coverprofile=coverage.out -covermode=atomic ./... && go tool cover -func=coverage.out"
+
+[tasks.install-hooks]
+description = "Install hk git hooks, replacing any Lefthook hook"
+run = '''
+#!/usr/bin/env bash
+set -eo pipefail
+# hk refuses to overwrite hooks it did not write, so remove the Lefthook
+# shim first. Lefthook's shim always mentions LEFTHOOK.
+hooks_dir=$(git rev-parse --git-path hooks)
+for hook in "$hooks_dir"/*; do
+  [ -f "$hook" ] || continue
+  if grep -q 'LEFTHOOK' "$hook"; then
+    rm -f "$hook"
+  fi
+done
+# Use the mise-pinned hk: a bare `hk` can resolve to another binary on PATH.
+mise exec -- hk install --mise
+'''
+
+[tasks.refresh-template]
+description = "Refresh from template"
+run = "git tpl update && git tpl merge"
+
+[tasks.pre-commit]
+description = "Format staged files"
+usage = 'arg "[staged_files]" var=#true'
+run = [
+  "go tool gitleaks git --redact --pre-commit --staged",
+  "mise run fix ${usage_staged_files}",
+]
+
+[tasks.test]
+description = "Run tests (with the race detector)"
+run = "go test -cover ./..."
+
+#############
+# Fix Tasks #
+#############
+
+[tasks.fix]
+usage = 'arg "[staged_files]" var=#true'
+run = [
+  "mise run fix-go-mod-tidy",
+  "mise run fix-gofumpt ${usage_staged_files}",
+  "mise run fix-goimports ${usage_staged_files}",
+  "mise run fix-go-fix ${usage_staged_files}",
+  "mise run fix-testifylint ${usage_staged_files}",
+]
+
+[tasks.fix-gofumpt]
+description = "Run code formatting tools"
+usage = 'arg "[staged_files]" var=#true'
+run = '''
+#!/usr/bin/env bash
+set -eo pipefail
+if [ -z "${usage_staged_files:-}" ]; then
+  go tool gofumpt -l -w .
+  exit 0
+fi
+go_files=""
+for f in ${usage_staged_files}; do
+  case "$f" in *.go) go_files="$go_files $f" ;; esac
+done
+[ -z "$go_files" ] && exit 0
+# shellcheck disable=SC2086
+go tool gofumpt -l -w $go_files
+'''
+
+[tasks.fix-goimports]
+description = "Run code formatting tools"
+usage = 'arg "[staged_files]" var=#true'
+run = '''
+#!/usr/bin/env bash
+set -eo pipefail
+if [ -z "${usage_staged_files:-}" ]; then
+  go tool goimports -l -w -local $(go list -m) .
+  exit 0
+fi
+go_files=""
+for f in ${usage_staged_files}; do
+  case "$f" in *.go) go_files="$go_files $f" ;; esac
+done
+[ -z "$go_files" ] && exit 0
+# shellcheck disable=SC2086
+go tool goimports -l -w -local $(go list -m) $go_files
+'''
+
+[tasks.fix-go-fix]
+description = "Apply go fix"
+usage = 'arg "[staged_files]" var=#true'
+run = '''
+#!/usr/bin/env bash
+set -eo pipefail
+if [ -z "${usage_staged_files:-}" ]; then
+  go fix ./...
+  exit 0
+fi
+dirs=""
+for f in ${usage_staged_files}; do
+  case "$f" in
+    *.go)
+      d=$(dirname "$f")
+      case "$d" in ./*|/*) ;; *) d="./$d" ;; esac
+      dirs="$dirs $d"
+      ;;
+  esac
+done
+[ -z "$dirs" ] && exit 0
+# shellcheck disable=SC2086
+pkgs=$(printf '%s\n' $dirs | sort -u)
+# shellcheck disable=SC2086
+go fix $pkgs
+'''
+
+[tasks.fix-go-mod-tidy]
+description = "Tidy go.mod and go.sum"
+run = "go mod tidy"
+
+[tasks.fix-testifylint]
+description = "Run testifylint static analysis"
+usage = 'arg "[staged_files]" var=#true'
+run = '''
+#!/usr/bin/env bash
+set -eo pipefail
+if [ -z "${usage_staged_files:-}" ]; then
+  go tool testifylint -fix ./...
+  exit 0
+fi
+dirs=""
+for f in ${usage_staged_files}; do
+  case "$f" in
+    *.go)
+      d=$(dirname "$f")
+      case "$d" in ./*|/*) ;; *) d="./$d" ;; esac
+      dirs="$dirs $d"
+      ;;
+  esac
+done
+[ -z "$dirs" ] && exit 0
+# shellcheck disable=SC2086
+pkgs=$(printf '%s\n' $dirs | sort -u)
+# shellcheck disable=SC2086
+go tool testifylint -fix $pkgs
+'''
+
+###############
+# Check Tasks #
+###############
+
+[tasks.check]
+usage = 'arg "[staged_files]" var=#true'
+run = [
+  "mise run check-go-mod-tidy",
+  "mise run check-gofumpt ${usage_staged_files}",
+  "mise run check-goimports ${usage_staged_files}",
+  "mise run check-go-fix ${usage_staged_files}",
+  "mise run check-testifylint ${usage_staged_files}",
+  "mise run check-constable",
+  "mise run check-errcheck",
+  "mise run check-gitleaks",
+  "mise run check-go-check-sumtype",
+  "mise run check-go-vet",
+  "mise run check-gosec",
+  "mise run check-govulncheck",
+  "mise run check-nilaway",
+  "mise run check-staticcheck",
+]
+
+[tasks.check-gofumpt]
+description = "Report gofumpt diffs without writing"
+usage = 'arg "[staged_files]" var=#true'
+run = '''
+#!/usr/bin/env bash
+set -eo pipefail
+if [ -z "${usage_staged_files:-}" ]; then
+  go tool gofumpt -d .
+  exit 0
+fi
+go_files=""
+for f in ${usage_staged_files}; do
+  case "$f" in *.go) go_files="$go_files $f" ;; esac
+done
+[ -z "$go_files" ] && exit 0
+# shellcheck disable=SC2086
+go tool gofumpt -d $go_files
+'''
+
+[tasks.check-goimports]
+description = "Report goimports diffs without writing"
+usage = 'arg "[staged_files]" var=#true'
+run = '''
+#!/usr/bin/env bash
+set -eo pipefail
+module=$(go list -m)
+if [ -z "${usage_staged_files:-}" ]; then
+  report=$(go tool goimports -d -local "$module" .)
+else
+  go_files=""
+  for f in ${usage_staged_files}; do
+    case "$f" in *.go) go_files="$go_files $f" ;; esac
+  done
+  [ -z "$go_files" ] && exit 0
+  # shellcheck disable=SC2086
+  report=$(go tool goimports -d -local "$module" $go_files)
+fi
+if [ -n "$report" ]; then
+  printf '%s\n' "$report"
+  exit 1
+fi
+'''
+
+[tasks.check-go-fix]
+description = "Report go fix diffs without writing"
+usage = 'arg "[staged_files]" var=#true'
+run = '''
+#!/usr/bin/env bash
+set -eo pipefail
+if [ -z "${usage_staged_files:-}" ]; then
+  go fix -diff ./...
+  exit 0
+fi
+dirs=""
+for f in ${usage_staged_files}; do
+  case "$f" in
+    *.go)
+      d=$(dirname "$f")
+      case "$d" in ./*|/*) ;; *) d="./$d" ;; esac
+      dirs="$dirs $d"
+      ;;
+  esac
+done
+[ -z "$dirs" ] && exit 0
+# shellcheck disable=SC2086
+pkgs=$(printf '%s\n' $dirs | sort -u)
+# shellcheck disable=SC2086
+go fix -diff $pkgs
+'''
+
+[tasks.check-go-mod-tidy]
+description = "Report go.mod tidy diffs without writing"
+run = "go mod tidy -diff"
+
+[tasks.check-constable]
+description = "Checks nonmutating directives"
+run = "go tool constable ./..."
+
+[tasks.check-errcheck]
+description = "Check for unhandled errors"
+run = "go tool errcheck ./..."
+
+[tasks.check-gitleaks]
+description = "Scan the Git history for secrets"
+run = "go tool gitleaks dir --verbose --redact ."
+
+[tasks.check-go-check-sumtype]
+description = "Check sealed sum-type switches for exhaustiveness"
+run = "go tool go-check-sumtype -default-signifies-exhaustive=false -include-shared-interfaces ./..."
+
+[tasks.check-go-vet]
+description = "Run go vet static analysis"
+run = "go vet ./..."
+
+[tasks.check-gosec]
+description = "Run gosec static analysis"
+run = "go tool gosec -severity high -quiet ./..."
+
+[tasks.check-govulncheck]
+description = "Check for vulnerabilities"
+run = "go tool govulncheck ./..."
+
+[tasks.check-nilaway]
+description = "Run nilaway on github.com/nnutter packages"
+run = "go tool nilaway -include-pkgs $(go list -m) ./..."
+
+[tasks.check-staticcheck]
+description = "Run staticcheck static analysis"
+run = "go tool staticcheck ./..."
+
+[tasks.check-testifylint]
+description = "Run testifylint static analysis"
+usage = 'arg "[staged_files]" var=#true'
+run = '''
+#!/usr/bin/env bash
+set -eo pipefail
+if [ -z "${usage_staged_files:-}" ]; then
+  go tool testifylint ./...
+  exit 0
+fi
+dirs=""
+for f in ${usage_staged_files}; do
+  case "$f" in
+    *.go)
+      d=$(dirname "$f")
+      case "$d" in ./*|/*) ;; *) d="./$d" ;; esac
+      dirs="$dirs $d"
+      ;;
+  esac
+done
+[ -z "$dirs" ] && exit 0
+# shellcheck disable=SC2086
+pkgs=$(printf '%s\n' $dirs | sort -u)
+# shellcheck disable=SC2086
+go tool testifylint $pkgs
+'''
+
+#####################
+# Agent Hooks       #
+#####################
+
+[tasks.on-start]
+description = "Pi mise-hooks: run fix, test, and check before agent starts"
+run = [{ task = "all" }]
+
+[tasks.on-stop]
+description = "Pi mise-hooks: fix edited files, then test and check"
+usage = 'arg "[staged_files]" var=#true'
+run = [
+  "mise run fix ${usage_staged_files}",
+  "mise run test",
+  "mise run check",
+]

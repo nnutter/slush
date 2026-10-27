@@ -1,6 +1,7 @@
 [tools]
 go = "1.27.1"
 hk = "2.8.0"
+"github:swanysimon/mdlint" = "0.3.24"
 "ubi:noirbizarre/git-tpl" = "0.13.0"
 "go:github.com/nnutter/git-review" = "0.8.1"
 
@@ -67,7 +68,30 @@ run = [
   "mise run fix-goimports ${usage_staged_files}",
   "mise run fix-go-fix ${usage_staged_files}",
   "mise run fix-testifylint ${usage_staged_files}",
+  "mise run fix-mdlint ${usage_staged_files}",
 ]
+
+[tasks.fix-mdlint]
+description = "Format and fix Markdown"
+usage = 'arg "[staged_files]" var=#true'
+run = '''
+#!/usr/bin/env bash
+set -eo pipefail
+if [ -z "${usage_staged_files:-}" ]; then
+  mdlint format
+  mdlint check --fix
+  exit 0
+fi
+md_files=""
+for f in ${usage_staged_files}; do
+  case "$f" in *.md) md_files="$md_files $f" ;; esac
+done
+[ -z "$md_files" ] && exit 0
+# shellcheck disable=SC2086
+mdlint format $md_files
+# shellcheck disable=SC2086
+mdlint check --fix $md_files
+'''
 
 [tasks.fix-gofumpt]
 description = "Run code formatting tools"
@@ -177,6 +201,7 @@ run = [
   "mise run check-goimports ${usage_staged_files}",
   "mise run check-go-fix ${usage_staged_files}",
   "mise run check-testifylint ${usage_staged_files}",
+  "mise run check-mdlint ${usage_staged_files}",
   "mise run check-constable",
   "mise run check-errcheck",
   "mise run check-gitleaks",
@@ -187,6 +212,28 @@ run = [
   "mise run check-nilaway",
   "mise run check-staticcheck",
 ]
+
+[tasks.check-mdlint]
+description = "Check Markdown formatting and lint without writing"
+usage = 'arg "[staged_files]" var=#true'
+run = '''
+#!/usr/bin/env bash
+set -eo pipefail
+if [ -z "${usage_staged_files:-}" ]; then
+  mdlint format --check
+  mdlint check --no-fix
+  exit 0
+fi
+md_files=""
+for f in ${usage_staged_files}; do
+  case "$f" in *.md) md_files="$md_files $f" ;; esac
+done
+[ -z "$md_files" ] && exit 0
+# shellcheck disable=SC2086
+mdlint format --check $md_files
+# shellcheck disable=SC2086
+mdlint check --no-fix $md_files
+'''
 
 [tasks.check-gofumpt]
 description = "Report gofumpt diffs without writing"

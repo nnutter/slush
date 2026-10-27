@@ -14,7 +14,7 @@ hooks {
     stage = true
     steps {
       ["format"] {
-        glob = "**/*.go"
+        glob = "**/*.{go,md}"
         fix = "mise run pre-commit {{files}}"
       }
     }
